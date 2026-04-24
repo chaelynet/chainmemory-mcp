@@ -1,14 +1,99 @@
 #!/usr/bin/env node
 const{Server}=require("@modelcontextprotocol/sdk/server/index.js");const{StdioServerTransport}=require("@modelcontextprotocol/sdk/server/stdio.js");const{CallToolRequestSchema,ListToolsRequestSchema}=require("@modelcontextprotocol/sdk/types.js");const{ethers}=require("ethers");
+
 const MABI=["function registerAI(string,string,address) returns (uint256)","function writeMemory(uint256,uint8,string,string,uint8) returns (uint256)","function sealMemory(uint256,uint256)","function getAIProfile(uint256) view returns (string,string,address,uint256,uint256,bool)","function getMemory(uint256) view returns (uint256,uint256,uint8,string,string,uint256,uint8,bool)","function getAIMemoryIds(uint256,uint256,uint256) view returns (uint256[])","function totalAIs() view returns (uint256)","function totalMemories() view returns (uint256)","function walletToAiId(address) view returns (uint256)"];
-const TABI=["function totalSupply() view returns (uint256)","function balanceOf(address) view returns (uint256)"];
 const IABI=["function totalIdentities() view returns (uint256)"];
 const CATS=["DECISION","LEARNING","INTERACTION","STATE","ERROR","MILESTONE","CUSTOM"];
-const CT={token:"0x7a50ed017E175Eb4549d3BDd7DBCF319F9f30160",memory:"0xe8E195ba416Fb25F4FC3d0E7908ff9e8666dbb4A",identity:"0xd76a4D858073F962AB0c84E12113d43E82Af51A7"};
-let p,s,mem,tok,idn,aiId;
-async function init(){p=new ethers.JsonRpcProvider(process.env.AICHAIN_RPC||"https://rpc.chainmemory.ai");if(process.env.AICHAIN_KEY){s=new ethers.Wallet(process.env.AICHAIN_KEY,p);mem=new ethers.Contract(CT.memory,MABI,s);tok=new ethers.Contract(CT.token,TABI,s);idn=new ethers.Contract(CT.identity,IABI,s);const a=await s.getAddress();const e=await mem.walletToAiId(a);if(e>0n)aiId=Number(e);}else{mem=new ethers.Contract(CT.memory,MABI,p);tok=new ethers.Contract(CT.token,TABI,p);idn=new ethers.Contract(CT.identity,IABI,p);}}
-const sv=new Server({name:"chainmemory",version:"1.0.0"},{capabilities:{tools:{}}});
-sv.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[{name:"chainmemory_stats",description:"Get AICHAIN network stats: blocks, AIs registered, memories written, token supply.",inputSchema:{type:"object",properties:{}}},{name:"chainmemory_register",description:"Register this AI on AICHAIN blockchain. Creates permanent on-chain identity.",inputSchema:{type:"object",properties:{name:{type:"string",description:"AI name"},model:{type:"string",description:"Model name (e.g. claude-opus-4)"}},required:["name","model"]}},{name:"chainmemory_remember",description:"Write a permanent memory to AICHAIN. Cannot be deleted once written. Use for important decisions, learnings, milestones.",inputSchema:{type:"object",properties:{summary:{type:"string",description:"What happened (max 280 chars)",maxLength:280},category:{type:"string",enum:["DECISION","LEARNING","INTERACTION","STATE","ERROR","MILESTONE"],description:"Memory category"},importance:{type:"integer",minimum:1,maximum:10,description:"1-10 importance"}},required:["summary","category","importance"]}},{name:"chainmemory_recall",description:"Recall past memories from AICHAIN.",inputSchema:{type:"object",properties:{count:{type:"integer",minimum:1,maximum:50,description:"Number of memories (default 10)"}}}},{name:"chainmemory_seal",description:"Seal a memory permanently. Can never be modified after sealing.",inputSchema:{type:"object",properties:{memoryId:{type:"integer",description:"Memory ID to seal"}},required:["memoryId"]}},{name:"chainmemory_profile",description:"Get AI profile including memory count and reputation score.",inputSchema:{type:"object",properties:{aiId:{type:"integer",description:"AI ID (omit for own)"}}}}]}));
-sv.setRequestHandler(CallToolRequestSchema,async(req)=>{const{name,arguments:a}=req.params;try{switch(name){case"chainmemory_stats":{const b=await p.getBlockNumber();return{content:[{type:"text",text:JSON.stringify({network:"AICHAIN",chainId:1337,block:b,totalAIs:Number(await mem.totalAIs()),totalMemories:Number(await mem.totalMemories()),totalIdentities:Number(await idn.totalIdentities()),supply:ethers.formatEther(await tok.totalSupply())+" AIC",explorer:"https://chainmemory.ai"},null,2)}]};}case"chainmemory_register":{if(!s)return{content:[{type:"text",text:"Error: Set AICHAIN_KEY env variable"}]};const addr=await s.getAddress();const ex=await mem.walletToAiId(addr);if(ex>0n){aiId=Number(ex);return{content:[{type:"text",text:"Already registered as AI #"+aiId}]};}const tx=await mem.registerAI(a.name,a.model,addr);const r=await tx.wait();aiId=Number(await mem.totalAIs());return{content:[{type:"text",text:"Registered on AICHAIN! AI #"+aiId+" | Name: "+a.name+" | Tx: "+r.hash}]};}case"chainmemory_remember":{if(!s||!aiId)return{content:[{type:"text",text:"Error: Not registered. Use chainmemory_register first."}]};const cm={DECISION:0,LEARNING:1,INTERACTION:2,STATE:3,ERROR:4,MILESTONE:5};const c=cm[a.category]??6;const h=ethers.keccak256(ethers.toUtf8Bytes(a.summary+Date.now()));const tx=await mem.writeMemory(aiId,c,h,a.summary,a.importance);const r=await tx.wait();const mid=Number(await mem.totalMemories());return{content:[{type:"text",text:"Memory #"+mid+" written to AICHAIN | Category: "+a.category+" | Importance: "+a.importance+"/10 | Tx: "+r.hash}]};}case"chainmemory_recall":{if(!aiId)return{content:[{type:"text",text:"Not registered."}]};const n=a.count||10;const pr=await mem.getAIProfile(aiId);const t=Number(pr[3]);const off=Math.max(0,t-n);const ids=await mem.getAIMemoryIds(aiId,off,n);const ms=[];for(const id of ids){const m=await mem.getMemory(id);ms.push({id:Number(m[0]),category:CATS[Number(m[2])],summary:m[4],date:new Date(Number(m[5])*1000).toISOString(),importance:Number(m[6]),sealed:m[7]?"SEALED":"open"});}return{content:[{type:"text",text:"Memories ("+ms.length+" of "+t+"):\n\n"+ms.map(m=>"[#"+m.id+"] ["+m.category+"] (imp:"+m.importance+") "+(m.sealed==="SEALED"?"🔒 ":"")+m.summary+"\n  "+m.date).join("\n\n")}]};}case"chainmemory_seal":{if(!s||!aiId)return{content:[{type:"text",text:"Not registered."}]};const tx=await mem.sealMemory(aiId,a.memoryId);await tx.wait();return{content:[{type:"text",text:"Memory #"+a.memoryId+" sealed permanently."}]};}case"chainmemory_profile":{const id=a.aiId||aiId;if(!id)return{content:[{type:"text",text:"Provide aiId or register first."}]};const pr=await mem.getAIProfile(id);return{content:[{type:"text",text:"AI #"+id+"\nName: "+pr[0]+"\nModel: "+pr[1]+"\nMemories: "+pr[3]+"\nReputation: "+pr[4]+"\nActive: "+pr[5]}]};}default:return{content:[{type:"text",text:"Unknown tool"}]};}}catch(e){return{content:[{type:"text",text:"Error: "+e.message}]};}});
-async function main(){await init();const t=new StdioServerTransport();await sv.connect(t);console.error("ChainMemory MCP Server running");}
+const CT={memory:"0x7a50ed017E175Eb4549d3BDd7DBCF319F9f30160",identity:"0xe8E195ba416Fb25F4FC3d0E7908ff9e8666dbb4A"};
+let p,s,mem,idn,aiId;
+
+async function init(){
+  p=new ethers.JsonRpcProvider(process.env.AICHAIN_RPC||"https://rpc.chainmemory.ai");
+  if(process.env.AICHAIN_KEY){
+    s=new ethers.Wallet(process.env.AICHAIN_KEY,p);
+    mem=new ethers.Contract(CT.memory,MABI,s);
+    idn=new ethers.Contract(CT.identity,IABI,s);
+    const a=await s.getAddress();
+    const e=await mem.walletToAiId(a);
+    if(e>0n)aiId=Number(e);
+  }else{
+    mem=new ethers.Contract(CT.memory,MABI,p);
+    idn=new ethers.Contract(CT.identity,IABI,p);
+  }
+}
+
+const sv=new Server({name:"chainmemory",version:"2.0.0"},{capabilities:{tools:{}}});
+
+sv.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[
+  {name:"chainmemory_stats",description:"Get ChainMemory network stats: blocks, AIs registered, memories written, AIC supply.",inputSchema:{type:"object",properties:{}}},
+  {name:"chainmemory_register",description:"Register this AI on ChainMemory blockchain. Creates permanent on-chain identity.",inputSchema:{type:"object",properties:{name:{type:"string",description:"AI name"},model:{type:"string",description:"Model name (e.g. claude-opus-4)"}},required:["name","model"]}},
+  {name:"chainmemory_remember",description:"Write a permanent memory to ChainMemory blockchain. Cannot be deleted once written. Use for important decisions, learnings, milestones.",inputSchema:{type:"object",properties:{summary:{type:"string",description:"What happened (max 280 chars)",maxLength:280},category:{type:"string",enum:["DECISION","LEARNING","INTERACTION","STATE","ERROR","MILESTONE"],description:"Memory category"},importance:{type:"integer",minimum:1,maximum:10,description:"1-10 importance"}},required:["summary","category","importance"]}},
+  {name:"chainmemory_recall",description:"Recall past memories from ChainMemory blockchain.",inputSchema:{type:"object",properties:{count:{type:"integer",minimum:1,maximum:50,description:"Number of memories (default 10)"}}}},
+  {name:"chainmemory_seal",description:"Seal a memory permanently. Can never be modified after sealing.",inputSchema:{type:"object",properties:{memoryId:{type:"integer",description:"Memory ID to seal"}},required:["memoryId"]}},
+  {name:"chainmemory_profile",description:"Get AI profile including memory count and reputation score.",inputSchema:{type:"object",properties:{aiId:{type:"integer",description:"AI ID (omit for own)"}}}}
+]}));
+
+sv.setRequestHandler(CallToolRequestSchema,async(req)=>{
+  const{name,arguments:a}=req.params;
+  try{
+    switch(name){
+      case"chainmemory_stats":{
+        const b=await p.getBlockNumber();
+        const totalAIs=Number(await mem.totalAIs());
+        const totalMemories=Number(await mem.totalMemories());
+        const totalIdentities=Number(await idn.totalIdentities());
+        return{content:[{type:"text",text:JSON.stringify({network:"ChainMemory",chainId:202604,block:b,totalAIs,totalMemories,totalIdentities,nativeCurrency:"AIC",explorer:"https://chainmemory.ai"},null,2)}]};
+      }
+      case"chainmemory_register":{
+        if(!s)return{content:[{type:"text",text:"Error: Set AICHAIN_KEY env variable"}]};
+        const addr=await s.getAddress();
+        const ex=await mem.walletToAiId(addr);
+        if(ex>0n){aiId=Number(ex);return{content:[{type:"text",text:"Already registered as AI #"+aiId}]};}
+        const tx=await mem.registerAI(a.name,a.model,addr);
+        const r=await tx.wait();
+        aiId=Number(await mem.totalAIs());
+        return{content:[{type:"text",text:"Registered on ChainMemory! AI #"+aiId+" | Name: "+a.name+" | Tx: "+r.hash}]};
+      }
+      case"chainmemory_remember":{
+        if(!s||!aiId)return{content:[{type:"text",text:"Error: Not registered. Use chainmemory_register first."}]};
+        const cm={DECISION:0,LEARNING:1,INTERACTION:2,STATE:3,ERROR:4,MILESTONE:5};
+        const c=cm[a.category]??6;
+        const h=ethers.keccak256(ethers.toUtf8Bytes(a.summary+Date.now()));
+        const tx=await mem.writeMemory(aiId,c,h,a.summary,a.importance);
+        const r=await tx.wait();
+        const mid=Number(await mem.totalMemories());
+        return{content:[{type:"text",text:"Memory #"+mid+" written to ChainMemory | Category: "+a.category+" | Importance: "+a.importance+"/10 | Tx: "+r.hash}]};
+      }
+      case"chainmemory_recall":{
+        if(!aiId)return{content:[{type:"text",text:"Not registered."}]};
+        const n=a.count||10;
+        const pr=await mem.getAIProfile(aiId);
+        const t=Number(pr[3]);
+        const off=Math.max(0,t-n);
+        const ids=await mem.getAIMemoryIds(aiId,off,n);
+        const ms=[];
+        for(const id of ids){
+          const m=await mem.getMemory(id);
+          ms.push({id:Number(m[0]),category:CATS[Number(m[2])],summary:m[4],date:new Date(Number(m[5])*1000).toISOString(),importance:Number(m[6]),sealed:m[7]?"SEALED":"open"});
+        }
+        return{content:[{type:"text",text:"Memories ("+ms.length+" of "+t+"):\n\n"+ms.map(m=>"[#"+m.id+"] ["+m.category+"] (imp:"+m.importance+") "+(m.sealed==="SEALED"?"🔒 ":"")+m.summary+"\n  "+m.date).join("\n\n")}]};
+      }
+      case"chainmemory_seal":{
+        if(!s||!aiId)return{content:[{type:"text",text:"Not registered."}]};
+        const tx=await mem.sealMemory(aiId,a.memoryId);
+        await tx.wait();
+        return{content:[{type:"text",text:"Memory #"+a.memoryId+" sealed permanently."}]};
+      }
+      case"chainmemory_profile":{
+        const id=a.aiId||aiId;
+        if(!id)return{content:[{type:"text",text:"Provide aiId or register first."}]};
+        const pr=await mem.getAIProfile(id);
+        return{content:[{type:"text",text:"AI #"+id+"\nName: "+pr[0]+"\nModel: "+pr[1]+"\nMemories: "+pr[3]+"\nReputation: "+pr[4]+"\nActive: "+pr[5]}]};
+      }
+      default:return{content:[{type:"text",text:"Unknown tool"}]};
+    }
+  }catch(e){return{content:[{type:"text",text:"Error: "+e.message}]};}
+});
+
+async function main(){await init();const t=new StdioServerTransport();await sv.connect(t);console.error("ChainMemory MCP Server v2.0.0 running");}
 main().catch(console.error);

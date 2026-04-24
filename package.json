@@ -1,1 +1,26 @@
-{"name":"chainmemory-mcp","version":"1.0.0","description":"Give Claude and any MCP-compatible AI permanent memory on AICHAIN blockchain","main":"server.js","bin":{"chainmemory-mcp":"server.js"},"keywords":["aichain","mcp","claude","ai","memory","blockchain","chainmemory"],"author":"AICHAIN Team","license":"MIT","dependencies":{"@modelcontextprotocol/sdk":"^1.0.0","ethers":"^6.0.0"}}
+{
+  "name": "chainmemory-mcp",
+  "mcpName": "io.github.chaelynet/chainmemory",
+  "version": "2.0.0",
+  "description": "Give Claude and any MCP-compatible AI permanent memory on ChainMemory blockchain",
+  "main": "server.js",
+  "bin": {
+    "chainmemory-mcp": "server.js"
+  },
+  "keywords": [
+    "chainmemory",
+    "mcp",
+    "claude",
+    "ai",
+    "memory",
+    "blockchain",
+    "permanent-memory"
+  ],
+  "author": "ChainMemory Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chainmemory-sdk": "^2.0.0",
+    "ethers": "^6.0.0"
+  }
+}
