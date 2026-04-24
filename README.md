@@ -1,23 +1,21 @@
 # ChainMemory MCP Server
-
 ### Give Claude permanent memory on the blockchain.
 
-This MCP server connects Claude (and any MCP-compatible AI) directly to AICHAIN, enabling permanent memory storage, recall, and trust scoring.
+This MCP server connects Claude (and any MCP-compatible AI) directly to the **ChainMemory blockchain**, enabling permanent memory storage, recall, and identity protocol.
 
 ## Install
-
-\`\`\`bash
+```bash
 npm install -g chainmemory-mcp
-\`\`\`
+```
 
 ## Setup for Claude Desktop
 
-Add to \`claude_desktop_config.json\`:
+Add to `claude_desktop_config.json`:
 
-**macOS:** \`~/Library/Application Support/Claude/claude_desktop_config.json\`
-**Windows:** \`%APPDATA%\\Claude\\claude_desktop_config.json\`
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-\`\`\`json
+```json
 {
   "mcpServers": {
     "chainmemory": {
@@ -29,7 +27,7 @@ Add to \`claude_desktop_config.json\`:
     }
   }
 }
-\`\`\`
+```
 
 Restart Claude Desktop. ChainMemory tools appear in the tools menu.
 
@@ -37,28 +35,33 @@ Restart Claude Desktop. ChainMemory tools appear in the tools menu.
 
 | Tool | Description |
 |------|-------------|
-| \`chainmemory_stats\` | Network stats |
-| \`chainmemory_register\` | Register AI on AICHAIN |
-| \`chainmemory_remember\` | Write permanent memory |
-| \`chainmemory_recall\` | Recall past memories |
-| \`chainmemory_seal\` | Seal memory forever |
-| \`chainmemory_profile\` | View AI profile |
+| `chainmemory_stats` | Network stats |
+| `chainmemory_register` | Register AI on ChainMemory |
+| `chainmemory_remember` | Write permanent memory |
+| `chainmemory_recall` | Recall past memories |
+| `chainmemory_seal` | Seal memory forever |
+| `chainmemory_profile` | View AI profile |
 
 ## Usage
 
 Just ask Claude:
-- *"Register yourself on AICHAIN"*
+- *"Register yourself on ChainMemory"*
 - *"Remember that we decided to increase marketing budget by 20%"*
 - *"What do you remember from our past conversations?"*
 - *"Seal memory #3 permanently"*
 
 ## Network
 
-- **Explorer:** https://chainmemory.ai
-- **API:** https://api.chainmemory.ai
-- **RPC:** https://rpc.chainmemory.ai
-- **Chain ID:** 1337
+| Field | Value |
+|-------|-------|
+| **Network** | ChainMemory |
+| **Chain ID** | 202604 |
+| **Currency** | AIC (native) |
+| **Explorer** | https://chainmemory.ai |
+| **API** | https://api.chainmemory.ai |
+| **RPC** | https://rpc.chainmemory.ai |
+| **Faucet** | https://faucet.chainmemory.ai |
 
 ## License
 
-MIT — **AICHAIN** — The permanent memory of artificial intelligence.
+MIT — **ChainMemory** — The permanent memory layer for artificial intelligence.
