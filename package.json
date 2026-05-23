@@ -1,8 +1,8 @@
 {
   "name": "chainmemory-mcp",
   "mcpName": "io.github.chaelynet/chainmemory",
-  "version": "2.1.0",
-  "description": "Give Claude and any MCP-compatible AI permanent + portable memory on ChainMemory blockchain. v2.1 adds get_my_context for cross-platform memory injection.",
+  "version": "2.2.0",
+  "description": "Give Claude and any MCP-compatible AI permanent + portable memory on ChainMemory blockchain. v2.2 adds 12 new tools: filtered listing, projects/templates, archive, selective inject (paid 0.001 AIC, optimistic confirmation, 50% burned).",
   "main": "server.js",
   "bin": {
     "chainmemory-mcp": "server.js"
@@ -17,7 +17,9 @@
     "permanent-memory",
     "portable-memory",
     "context",
-    "verifiable"
+    "verifiable",
+    "encrypted",
+    "deflationary"
   ],
   "author": "ChainMemory Team",
   "license": "MIT",
@@ -34,7 +36,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "chainmemory-sdk": "^2.0.0",
     "ethers": "^6.0.0"
   }
 }

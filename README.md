@@ -1,114 +1,156 @@
-# chainmemory-mcp
+# ChainMemory MCP Server
 
-Give Claude and any MCP-compatible AI **permanent + portable memory** on the ChainMemory blockchain.
+[![npm version](https://img.shields.io/npm/v/chainmemory-mcp.svg)](https://www.npmjs.com/package/chainmemory-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/node/v/chainmemory-mcp.svg)](https://nodejs.org)
 
-## What's new in v2.1.0
+> Give Claude and any MCP-compatible AI permanent, portable, verifiable memory on the ChainMemory blockchain.
 
-- **`get_my_context`** — new tool. Retrieves the user's portable, verified AI conversation history across all platforms (ChatGPT, Claude, Gemini, Perplexity, etc) in a format ready to inject into the conversation. Cryptographic verification status included for every memory.
+ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted client-side, anchored on-chain (Chain ID 202604), and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM.
 
-## Install
+## What's new in v2.2.0
 
-```bash
-npx -y chainmemory-mcp@latest
-```
+- **12 new tools** for memory organization and selective context injection
+- **Projects + auto-tagging** — organize memories with project tags, define keywords for auto-tag rules
+- **Archive / unarchive** — hide memories from recall without losing them
+- **Selective inject** (paid) — inject 1-50 memories into a chat context for 0.001 AIC. 50% burned (deflationary), 50% to ecosystem treasury. Optimistic confirmation: returns plaintexts in <500ms while the on-chain payment confirms in background
+- **All tools routed through the REST API** — no private key required for memory ops (encryption is server-side per-user)
+- **Single env var** required to install: `CHAINMEMORY_API_KEY`
 
-Or pin to a version:
+## Quick start
 
-```bash
-npx -y chainmemory-mcp@2.1.0
-```
+### 1. Get an API key
 
-## Configuration (Claude Desktop)
+Visit [https://faucet.chainmemory.ai](https://faucet.chainmemory.ai) and connect a wallet. You receive:
+- An API key (for ops via REST)
+- A starter balance of AIC (for selective inject, faucet caps at 0.1 AIC)
 
-Edit `claude_desktop_config.json`:
+### 2. Add to Claude Desktop
+
+Edit your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
   "mcpServers": {
     "chainmemory": {
       "command": "npx",
-      "args": ["-y", "chainmemory-mcp@latest"],
+      "args": ["-y", "chainmemory-mcp"],
       "env": {
-        "AICHAIN_KEY": "0x<your 64-char private key>",
-        "CHAINMEMORY_API_KEY": "aic_<your 48-char api key>"
+        "CHAINMEMORY_API_KEY": "aic_your_key_here"
       }
     }
   }
 }
 ```
 
-| Env var | Required for | How to get one |
+Restart Claude Desktop. The 19 tools are now available.
+
+### 3. Try it
+
+In Claude Desktop, ask:
+- *"What do you remember about my projects?"* → `chainmemory_recall` is called
+- *"Save this decision: switching to Postgres for the next sprint"* → `chainmemory_remember`
+- *"Inject my last 5 blockchain memories into this chat"* → `inject_memories` (uses 0.001 AIC)
+
+## All 19 tools
+
+### Memory ops (6)
+
+| Tool | Description |
+|---|---|
+| `chainmemory_remember` | Write a permanent encrypted memory. Auto-tagged by content. |
+| `chainmemory_recall` | Recall the user's recent memories (most recent first) |
+| `list_memories_filtered` | Filter by project tag and archived status |
+| `update_memory_tags` | Change tags on an existing memory |
+| `archive_memory` | Hide a memory from recall (reversible) |
+| `unarchive_memory` | Restore an archived memory |
+
+### Identity & stats (4)
+
+| Tool | Description |
+|---|---|
+| `chainmemory_stats` | Network stats (AIs, memories, blocks, AIC supply) |
+| `chainmemory_register` | Register a new AI identity on-chain |
+| `chainmemory_profile` | Get an AI's profile and trust score |
+| `chainmemory_seal` | Seal a memory permanently (requires `AICHAIN_KEY`) |
+
+### Projects (5)
+
+| Tool | Description |
+|---|---|
+| `list_projects` | List the user's projects |
+| `create_project` | Create a custom project tag with optional auto-tag keywords |
+| `delete_project` | Delete a project tag |
+| `list_project_templates` | List built-in templates (general, development, blockchain, business, personal, research) |
+| `add_project_from_template` | Instantiate a built-in template |
+
+### Cross-platform context (1)
+
+| Tool | Description |
+|---|---|
+| `get_my_context` | Portable verified context across all platforms (v2.1 feature) |
+
+### Selective inject — paid (3)
+
+| Tool | Description |
+|---|---|
+| `get_inject_balance` | Check AIC balance |
+| `inject_memories` | Inject 1-50 memories into current chat context (0.001 AIC, optimistic) |
+| `get_inject_history` | History of inject operations |
+
+## Environment variables
+
+| Var | Required | Description |
 |---|---|---|
-| `AICHAIN_KEY` | On-chain tools (stats, register, remember, recall, seal, profile) | Generated by `POST /v1/keys` — returns wallet + private key |
-| `CHAINMEMORY_API_KEY` | `get_my_context` only | Same `POST /v1/keys` response, field `api_key` |
-| `AICHAIN_RPC` | Optional override | Default: `https://rpc.chainmemory.ai` |
-| `CHAINMEMORY_API_BASE` | Optional override | Default: `https://api.chainmemory.ai` |
+| `CHAINMEMORY_API_KEY` | **Yes** | Your API key from the faucet |
+| `CHAINMEMORY_API_BASE` | No | Default `https://api.chainmemory.ai` |
+| `AICHAIN_KEY` | No | Wallet private key — only required by `chainmemory_seal` |
+| `AICHAIN_RPC` | No | Default `https://rpc.chainmemory.ai` — only for `chainmemory_seal` |
 
-If you only want to use `get_my_context`, you can omit `AICHAIN_KEY`. The on-chain tools will return a clear error if invoked.
+For most users only `CHAINMEMORY_API_KEY` is needed.
 
-## Tools
+## How selective inject works
 
-### `get_my_context` (new in v2.1)
+Selective inject is the only paid operation. The flow:
 
-Retrieves the user's portable verified memory from across all AI platforms.
+1. User (or AI) calls `inject_memories` with a list of IDs
+2. Backend checks balance (≥ 0.001 AIC required)
+3. **Optimistic response (<500ms)**: plaintexts returned immediately, transactions queued
+4. Background: 0.0005 AIC sent to treasury, 0.0005 AIC sent to burn address `0x...dEaD`
+5. `get_inject_history` shows confirmation status
 
-**Input:** `limit` (1-50, default 10), `verified_only` (boolean, default false)
+The deflationary burn means total AIC supply decreases with usage. Treasury portion funds infrastructure and validator rewards.
 
-**Output:** Natural-language summary + recent memories with verification status + raw JSON for the model to parse.
+## Architecture
 
-Use this at the start of a new conversation to give the AI continuity with what the user discussed in other platforms.
+```
+┌─────────────────────────────────────────────────────────────┐
+│  AI Agent (Claude Desktop, etc)                             │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ MCP stdio
+                   ↓
+┌─────────────────────────────────────────────────────────────┐
+│  chainmemory-mcp v2.2.0  (this package)                     │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ HTTPS + x-api-key
+                   ↓
+┌─────────────────────────────────────────────────────────────┐
+│  api.chainmemory.ai                                         │
+│  - per-user encryption (AES-256-GCM, key from API+wallet)   │
+│  - auto-tag classifier                                      │
+│  - SQLite + Merkle proofs                                   │
+│  - Optimistic inject (parallel tx)                          │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ JSON-RPC
+                   ↓
+┌─────────────────────────────────────────────────────────────┐
+│  ChainMemory L1 — Chain ID 202604                           │
+│  - Geth PoA Clique                                          │
+│  - V2 memory contract (encrypted on-chain content)          │
+│  - Daily checkpoint anchoring                               │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### `chainmemory_stats`
+## License
 
-Network stats: blocks, AIs registered, total memories, AIC supply.
-
-### `chainmemory_register`
-
-Register this AI on-chain. Creates a permanent identity.
-
-**Input:** `name` (AI name), `model` (e.g. `claude-opus-4`)
-
-### `chainmemory_remember`
-
-Write a permanent memory to the blockchain. Cannot be deleted.
-
-**Input:** `summary` (max 280 chars), `category` (DECISION/LEARNING/INTERACTION/STATE/ERROR/MILESTONE), `importance` (1-10)
-
-### `chainmemory_recall`
-
-Recall this AI's on-chain memories.
-
-**Input:** `count` (1-50, default 10)
-
-### `chainmemory_seal`
-
-Seal a memory permanently — cannot be modified after sealing.
-
-**Input:** `memoryId` (integer)
-
-### `chainmemory_profile`
-
-Get an AI's profile (name, model, memory count, reputation).
-
-**Input:** `aiId` (omit for own profile)
-
-## Verification
-
-Every memory returned by `get_my_context` includes a `verified` boolean. When `true`, a `verification` block is present with:
-
-- `event_hash` — cryptographic fingerprint of this specific memory
-- `batch_root` — Merkle root of the batch this memory belongs to
-- `block_number` — ChainMemory L1 block where the batch was anchored
-- `tx_hash` — anchor transaction
-- `anchored_at` — ISO timestamp
-- `explorer_link` — public verification URL
-
-Anyone can independently verify a memory using the public `/v1/verify-memory` endpoint or by querying the `CheckpointAnchor` smart contract directly.
-
-## Links
-
-- Website: https://chainmemory.ai
-- API docs: https://api.chainmemory.ai/llms.txt
-- Explorer: https://chainmemory.ai
-- Source: https://github.com/chaelynet/chainmemory-mcp
-- License: MIT
+MIT

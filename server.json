@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.chaelynet/chainmemory",
+  "description": "Permanent blockchain memory for AI agents.",
+  "repository": {
+    "url": "https://github.com/chaelynet/chainmemory-mcp",
+    "source": "github"
+  },
+  "version": "1.0.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "chainmemory-mcp",
+      "version": "1.0.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Private key for AICHAIN wallet",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "AICHAIN_KEY"
+        },
+        {
+          "description": "RPC endpoint (default: https://rpc.chainmemory.ai)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "AICHAIN_RPC"
+        }
+      ]
+    }
+  ]
+}
