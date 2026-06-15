@@ -1,7 +1,7 @@
 {
   "name": "chainmemory-mcp",
   "mcpName": "io.github.chaelynet/chainmemory",
-  "version": "2.2.0",
+  "version": "2.3.2",
   "description": "Give Claude and any MCP-compatible AI permanent + portable memory on ChainMemory blockchain. v2.2 adds 12 new tools: filtered listing, projects/templates, archive, selective inject (paid 0.001 AIC, optimistic confirmation, 50% burned).",
   "main": "server.js",
   "bin": {
@@ -37,5 +37,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ethers": "^6.0.0"
-  }
+  },
+  "files": [
+    "server.js",
+    "server.json"
+  ]
 }

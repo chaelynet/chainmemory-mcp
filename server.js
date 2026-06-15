@@ -11,7 +11,7 @@
 //   - Backend handles V2 contract, auto-tag, anti-hallucination,
 //     and chain selection transparently
 //
-// 17 tools available:
+// 18 tools available:
 //
 //   Memory ops:
 //     - chainmemory_remember           — write memory
@@ -128,7 +128,7 @@ const apiDelete = (path, opts) => apiRequest("DELETE", path, null, opts);
 // ------------------------------------------------------------
 
 const sv = new Server(
-    { name: "chainmemory", version: "2.2.0" },
+    { name: "chainmemory", version: "2.3.2" },
     { capabilities: { tools: {} } }
 );
 
@@ -315,6 +315,18 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
             }
         },
 
+        // -- Project Brain: estado consolidado por proyecto --
+        {
+            name: "get_project_state",
+            description: "Get the consolidated, verifiable STATE of a project from Project Brain: a structured object (phase, current_focus, vocabulary, constraints, decisions with confidence and cited memory IDs, open_risks, next_priorities) distilled from your atomic memories. Use it at the START of work on a known project to load its current state instead of re-deriving context. Owner-scoped (returns only your own state). Includes state_hash (SHA3-256) for integrity.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    name: { type: "string", description: "Project name, e.g. 'chainmemory'" }
+                },
+                required: ["name"]
+            }
+        },
         // ── Selective inject (v2.2 — paid) ──
         {
             name: "get_inject_balance",
@@ -476,11 +488,17 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // ── Cross-platform context ──
+        // -- Project Brain: estado consolidado por proyecto --
+        if (name === "get_project_state") {
+            const data = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/state`);
+            return ok(JSON.stringify(data, null, 2));
+        }
+
         if (name === "get_my_context") {
             const params = new URLSearchParams();
             params.set("limit", String(args.limit || 10));
             if (args.verified_only) params.set("verified_only", "1");
-            const data = await apiGet(`/v1/context?${params}`);
+            const data = await apiGet(`/v1/memory/context?${params}`);
             return ok(formatContext(data));
         }
 
@@ -500,7 +518,8 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (!data.history || data.history.length === 0) return ok("No inject history yet.");
             const lines = data.history.map(h => {
                 const dt = new Date(h.timestamp * 1000).toISOString();
-                const status = h.success === 1 ? "✓ confirmed" : h.success === 2 ? "⏳ pending" : "✗ failed";
+                const _s = h.status || ((h.success === true || h.success === 1) ? "confirmed" : "failed");
+                const status = _s === "confirmed" ? "✓ confirmed" : _s === "pending" ? "⏳ pending" : "✗ failed";
                 return `${dt} ${status} | ${h.memory_count} memories | ${h.aic_charged} AIC | ${h.target_platform || '?'}`;
             });
             return ok(`Inject history (last ${data.history.length}):\n` + lines.join("\n"));
@@ -640,7 +659,7 @@ function formatContext(d) {
     const lines = [`Portable user context (${d.memories.length} memories):\n`];
     if (d.summary) lines.push(`Summary: ${d.summary}\n`);
     for (const m of d.memories) {
-        const dt = new Date(m.timestamp * 1000).toISOString().split("T")[0];
+        const dt = new Date(m.timestamp).toISOString().split("T")[0];
         const verified = m.verified ? "✓" : "○";
         const platform = m.platform ? `[${m.platform}]` : '';
         lines.push(`${verified} ${dt} ${platform} ${m.summary}`);
