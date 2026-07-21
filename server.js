@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// ChainMemory MCP Server v2.2.0
+// ChainMemory MCP Server v2.5.0
 // ============================================================
 // All tools route through the ChainMemory REST API
 // (https://api.chainmemory.ai by default). This means:
@@ -11,7 +11,7 @@
 //   - Backend handles V2 contract, auto-tag, anti-hallucination,
 //     and chain selection transparently
 //
-// 18 tools available:
+// 24 tools available:
 //
 //   Memory ops:
 //     - chainmemory_remember           — write memory
@@ -128,7 +128,7 @@ const apiDelete = (path, opts) => apiRequest("DELETE", path, null, opts);
 // ------------------------------------------------------------
 
 const sv = new Server(
-    { name: "chainmemory", version: "2.4.0" },
+    { name: "chainmemory", version: "2.5.0" },
     { capabilities: { tools: {} } }
 );
 
@@ -367,6 +367,22 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ["project", "ops"]
             }
         },
+        // ── VRC: Verifiable Role Contracts (v2.5.0) ──
+        {
+            name: "get_role_contract",
+            description: "Get a project's Verifiable Role Contract (VRC): purpose, rules with checks and severity, working protocol. Read it BEFORE working under a role. Human-authored and owner-signed; models read it, never write it.",
+            inputSchema: { type: "object", properties: { project: { type: "string", description: "Project name" }, role_id: { type: "string", description: "Role id, e.g. 'charly'" } }, required: ["project", "role_id"] }
+        },
+        {
+            name: "assume_role",
+            description: "Assume a project role under its Verifiable Role Contract, opening an audited Role Session (fee 0.001 AIC). Pins contract version+hash and Brain state_hash. Only 'active' (signed) contracts are assumable; one open session per role. Call at session start; close with release_role.",
+            inputSchema: { type: "object", properties: { project: { type: "string" }, role_id: { type: "string" }, platform: { type: "string", description: "Executor platform (e.g. claude, chatgpt, gemini)" } }, required: ["project", "role_id"] }
+        },
+        {
+            name: "release_role",
+            description: "Release an open Role Session with a closing summary (what was done, what is pending, next step). Sessions auto-release after 60 minutes.",
+            inputSchema: { type: "object", properties: { session_id: { type: "integer" }, summary: { type: "string", description: "Closing summary for the audit trail" } }, required: ["session_id"] }
+        },
         // ── Selective inject (v2.2 — paid) ──
         {
             name: "get_inject_balance",
@@ -533,6 +549,20 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
         // -- Project Brain: estado consolidado por proyecto --
         if (name === "get_project_state") {
             const data = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/state`);
+            // VRC v2.5.0: contratos de rol activos compuestos en la entrega.
+            try {
+                const rl = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/roles`);
+                const act = (rl.roles || []).filter(r => r.status === "active");
+                if (act.length) {
+                    const contracts = [];
+                    for (const r of act) {
+                        const c = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/role/${encodeURIComponent(r.role_id)}`);
+                        contracts.push({ role_id: c.role_id, version: c.version, contract_hash: c.contract_hash, signed_at: c.signed_at, integrity: c.integrity, contract: c.contract });
+                    }
+                    data.active_role_contracts = contracts;
+                    data.vrc_note = "Roles activos del proyecto. Para trabajar bajo un rol: assume_role al inicio, release_role al cierre. Las respuestas seran auditadas contra las reglas del contrato.";
+                }
+            } catch (e) { /* ausencia de VRC nunca bloquea el state (degradacion) */ }
             return ok(JSON.stringify(data, null, 2));
         }
         if (name === "update_project_state") {
@@ -579,6 +609,28 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
             return ok(formatContext(data));
         }
 
+        // ── VRC (v2.5.0) ──
+        if (name === "get_role_contract") {
+            const data = await apiGet(`/v1/project/${encodeURIComponent(args.project)}/role/${encodeURIComponent(args.role_id)}`);
+            return ok(JSON.stringify(data, null, 2));
+        }
+        if (name === "assume_role") {
+            const body = {};
+            if (args.platform) body.platform = args.platform;
+            const data = await apiPost(`/v1/project/${encodeURIComponent(args.project)}/role/${encodeURIComponent(args.role_id)}/assume`, body);
+            return ok(
+                `Role assumed: ${args.role_id}@${args.platform || "mcp"} (session #${data.session_id})\n` +
+                `Contract: v${data.contract_version} ${data.contract_hash}\n` +
+                `Brain pinned: v${data.brain_version} ${data.brain_state_hash}\n` +
+                `Auto-release: ${data.auto_release_minutes} min\n` +
+                `Event hash: ${data.event_hash}\n` +
+                `Opera bajo las reglas del contrato. Cierra con release_role(${data.session_id}, summary).`
+            );
+        }
+        if (name === "release_role") {
+            const data = await apiPost(`/v1/session/${args.session_id}/release`, { summary: args.summary || null });
+            return ok(`Session #${data.session_id} released (${data.release_type}). Duration: ${data.duration_seconds}s.`);
+        }
         // ── Inject (paid) ──
         if (name === "get_inject_balance") {
             const data = await apiGet("/v1/inject/balance");
@@ -762,7 +814,7 @@ function formatBalance(d) {
 async function main() {
     const transport = new StdioServerTransport();
     await sv.connect(transport);
-    console.error("[chainmemory-mcp v2.4.0] ready (API base: " + API_BASE + ")");
+    console.error("[chainmemory-mcp v2.5.0] ready (API base: " + API_BASE + ")");
 }
 
 main().catch(e => {
