@@ -128,7 +128,7 @@ const apiDelete = (path, opts) => apiRequest("DELETE", path, null, opts);
 // ------------------------------------------------------------
 
 const sv = new Server(
-    { name: "chainmemory", version: "2.3.2" },
+    { name: "chainmemory", version: "2.4.0" },
     { capabilities: { tools: {} } }
 );
 
@@ -146,6 +146,9 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
                 type: "object",
                 properties: {
                     summary: { type: "string", description: "What happened (will be encrypted before chain anchoring)" },
+                    content: { type: "string", description: "Full memory content (preferred; stored as the memory text)" },
+                    project: { type: "string", description: "Project to file this memory under (added as first tag)" },
+                    tags: { type: "array", items: { type: "string" }, maxItems: 10, description: "Explicit tags; auto-tagging only used as fallback" },
                     category: {
                         type: "string",
                         enum: ["DECISION", "LEARNING", "INTERACTION", "STATE", "ERROR", "MILESTONE", "CUSTOM"],
@@ -185,7 +188,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
             inputSchema: {
                 type: "object",
                 properties: {
-                    memory_id: { type: "integer", description: "Memory ID" },
+                    memory_id: { type: "integer", description: "Your memory number (the # shown in recall/remember, e.g. 489) — personal to your api key" },
                     tags: { type: "array", items: { type: "string" }, description: "New tag list (replaces current)" }
                 },
                 required: ["memory_id", "tags"]
@@ -197,7 +200,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
             inputSchema: {
                 type: "object",
                 properties: {
-                    memory_id: { type: "integer", description: "Memory ID to archive" }
+                    memory_id: { type: "integer", description: "Your memory number to archive (the # shown in recall)" }
                 },
                 required: ["memory_id"]
             }
@@ -208,7 +211,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
             inputSchema: {
                 type: "object",
                 properties: {
-                    memory_id: { type: "integer", description: "Memory ID to restore" }
+                    memory_id: { type: "integer", description: "Your memory number to restore (the # shown in recall)" }
                 },
                 required: ["memory_id"]
             }
@@ -248,7 +251,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
             inputSchema: {
                 type: "object",
                 properties: {
-                    memory_id: { type: "integer", description: "Memory ID to seal" },
+                    memory_id: { type: "integer", description: "Your memory number to seal (the # shown in recall)" },
                     ai_id: { type: "integer", description: "AI ID owning the memory" }
                 },
                 required: ["memory_id", "ai_id"]
@@ -327,6 +330,43 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ["name"]
             }
         },
+        {
+            name: "update_project_state",
+            description: "Propose structured operations to update a project's consolidated state (Project Brain). The LLM analyzes new memories and proposes ops from the 22-op grammar (add_decision, set_metric, add_milestone, etc.). The server validates invariants, applies via deterministic builder, computes state_hash, and persists. This is the 'client consolidates, chain verifies' architecture. Use after reading get_project_state + list_memories_filtered to identify what changed.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    project: {
+                        type: "string",
+                        description: "Project name, e.g. 'chainmemory'"
+                    },
+                    ops: {
+                        type: "array",
+                        description: "Array of operations from the 22-op grammar. Each op has 'op' (type) + arguments. Use 'evidence_memory_ids' (array of memory IDs) instead of 'evidence' — the server resolves event_hashes automatically.",
+                        items: {
+                            type: "object",
+                            properties: {
+                                op: {
+                                    type: "string",
+                                    description: "Operation type: add_decision, set_decision_status, supersede_decision, add_milestone, set_milestone_status, add_risk, set_risk_status, add_assumption, invalidate_assumption, add_open_question, answer_open_question, add_priority, set_priority_status, reorder_priority, set_focus, set_phase, set_vision, add_vocabulary, update_vocabulary, add_constraint, remove_constraint, set_metric"
+                                },
+                                evidence_memory_ids: {
+                                    type: "array",
+                                    items: { type: "integer" },
+                                    description: "Memory IDs that support this operation (server resolves to event_hashes for Merkle evidence)"
+                                }
+                            },
+                            required: ["op"]
+                        }
+                    },
+                    consolidated_until_event: {
+                        type: "integer",
+                        description: "Highest memory ID included in this consolidation (advances the watermark)"
+                    }
+                },
+                required: ["project", "ops"]
+            }
+        },
         // ── Selective inject (v2.2 — paid) ──
         {
             name: "get_inject_balance",
@@ -370,13 +410,15 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
         // ── Memory ops ──
         if (name === "chainmemory_remember") {
             const body = {
-                summary: args.summary,
+                summary: args.content || args.summary,
                 category: args.category || "INTERACTION",
                 importance: args.importance ?? 5
             };
             if (args.platform) body.platform = args.platform;
+            if (args.project && typeof args.project === "string") body.project = args.project;
+            if (Array.isArray(args.tags) && args.tags.length) body.tags = args.tags;
             const data = await apiPost("/v1/memory", body);
-            return ok(`Memory #${data.memory_id} written.\nEvent hash: ${data.event_hash}\nChain memory ID: ${data.chain_memory_id ?? 'pending'}\nTags: ${(data.tags || []).join(', ') || '(none)'}`);
+            return ok(`Memory #${data.memory_number} written.\nEvent hash: ${data.event_hash}\nChain memory ID: ${data.chain_memory_id ?? 'pending'}\nTags: ${(data.tags || []).join(', ') || '(none)'}`);
         }
 
         if (name === "chainmemory_recall") {
@@ -387,7 +429,7 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
                 const dt = new Date(m.timestamp * 1000).toISOString().split("T")[0];
                 const tags = (m.tags || []).length ? ` [${m.tags.join(', ')}]` : '';
                 const text = m.summary || m.summary_preview || '(no content)';
-                return `#${m.id} ${dt} [${m.category}]${tags}\n  ${text}`;
+                return `#${m.memory_number} ${dt} [${m.category}]${tags}\n  ${text}`;
             });
             return ok(`Last ${data.memories.length} memories:\n\n` + lines.join("\n\n"));
         }
@@ -405,7 +447,7 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
                 const tags = (m.tags || []).length ? ` [${m.tags.join(', ')}]` : '';
                 const archived = m.archived ? ' [ARCHIVED]' : '';
                 const text = m.summary || m.summary_preview || '(no content)';
-                return `#${m.id} ${dt} [${m.category}]${tags}${archived}\n  ${text}`;
+                return `#${m.memory_number} ${dt} [${m.category}]${tags}${archived}\n  ${text}`;
             });
             return ok(`Found ${data.memories.length} memories (total ${data.total || data.memories.length}):\n\n` + lines.join("\n\n"));
         }
@@ -492,6 +534,41 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (name === "get_project_state") {
             const data = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/state`);
             return ok(JSON.stringify(data, null, 2));
+        }
+        if (name === "update_project_state") {
+            if (!Array.isArray(args.ops) || args.ops.length === 0) {
+                return err("ops must be a non-empty array of operations");
+            }
+            const body = {
+                ops: args.ops,
+                generated_by: "frontier_client"
+            };
+            if (args.consolidated_until_event) {
+                body.consolidated_until_event = args.consolidated_until_event;
+            }
+            const data = await apiPost(
+                `/v1/project/${encodeURIComponent(args.project)}/state/ops`,
+                body,
+                { timeoutMs: 30000 }
+            );
+            if (data.unchanged) {
+                return ok(
+                    `State unchanged (v${data.version}).\n` +
+                    `Hash: ${data.state_hash}\n` +
+                    `Applied: ${data.applied_count} | Rejected: ${(data.rejected || []).length}\n` +
+                    `Reason: ${data.message || 'no changes'}`
+                );
+            }
+            const rejLines = (data.rejected || []).map(r =>
+                `  [${r.index}] ${r.op}: ${r.error}`
+            );
+            return ok(
+                `State updated to v${data.version}.\n` +
+                `Hash: ${data.state_hash}\n` +
+                `Applied: ${data.applied_count} | Rejected: ${(data.rejected || []).length}\n` +
+                (rejLines.length ? `\nRejected ops:\n${rejLines.join("\n")}` : "") +
+                `\nGenerated: ${data.generated_at}`
+            );
         }
 
         if (name === "get_my_context") {
@@ -685,7 +762,7 @@ function formatBalance(d) {
 async function main() {
     const transport = new StdioServerTransport();
     await sv.connect(transport);
-    console.error("[chainmemory-mcp v2.2.0] ready (API base: " + API_BASE + ")");
+    console.error("[chainmemory-mcp v2.4.0] ready (API base: " + API_BASE + ")");
 }
 
 main().catch(e => {
