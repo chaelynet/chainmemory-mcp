@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// ChainMemory MCP Server v2.5.1
+// ChainMemory MCP Server v2.5.0
 // ============================================================
 // All tools route through the ChainMemory REST API
 // (https://api.chainmemory.ai by default). This means:
@@ -128,7 +128,7 @@ const apiDelete = (path, opts) => apiRequest("DELETE", path, null, opts);
 // ------------------------------------------------------------
 
 const sv = new Server(
-    { name: "chainmemory", version: "2.5.1" },
+    { name: "chainmemory", version: "2.5.0" },
     { capabilities: { tools: {} } }
 );
 
@@ -814,7 +814,7 @@ function formatBalance(d) {
 async function main() {
     const transport = new StdioServerTransport();
     await sv.connect(transport);
-    console.error("[chainmemory-mcp v2.5.1] ready (API base: " + API_BASE + ")");
+    console.error("[chainmemory-mcp v2.5.0] ready (API base: " + API_BASE + ")");
 }
 
 main().catch(e => {

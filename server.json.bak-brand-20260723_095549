@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.chaelynet/chainmemory",
-  "description": "Cross-model, cryptographically verifiable memory for Claude, ChatGPT, and any AI agent — own your AI's memory and carry it across every model.",
+  "description": "Permanent blockchain memory for AI agents.",
   "repository": {
     "url": "https://github.com/chaelynet/chainmemory-mcp",
     "source": "github"
   },
-  "version": "2.5.1",
+  "version": "1.0.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "chainmemory-mcp",
-      "version": "2.5.1",
+      "version": "1.0.1",
       "transport": {
         "type": "stdio"
       },
