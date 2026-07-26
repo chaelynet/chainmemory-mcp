@@ -321,7 +321,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         // -- Project Brain: estado consolidado por proyecto --
         {
             name: "get_project_state",
-            description: "Get the consolidated, verifiable STATE of a project from Project Brain: a structured object (phase, current_focus, vocabulary, constraints, decisions with confidence and cited memory IDs, open_risks, next_priorities) distilled from your atomic memories. Use it at the START of work on a known project to load its current state instead of re-deriving context. Owner-scoped (returns only your own state). Includes state_hash (SHA3-256) for integrity.",
+            description: "Get the consolidated, verifiable STATE of a project from Project Brain: a structured object (phase, current_focus, vocabulary, constraints, decisions with confidence and cited memory IDs, open_risks, next_priorities, and `environment` — where and how the owner works: hosts, services, repositories and operating rules) distilled from your atomic memories. Use it at the START of work on a known project to load its current state instead of re-deriving context. Owner-scoped (returns only your own state). Includes state_hash (SHA3-256) for integrity.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -332,7 +332,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "update_project_state",
-            description: "Propose structured operations to update a project's consolidated state (Project Brain). The LLM analyzes new memories and proposes ops from the 22-op grammar (add_decision, set_metric, add_milestone, etc.). The server validates invariants, applies via deterministic builder, computes state_hash, and persists. This is the 'client consolidates, chain verifies' architecture. Use after reading get_project_state + list_memories_filtered to identify what changed.",
+            description: "Propose structured operations to update a project's consolidated state (Project Brain). The LLM analyzes new memories and proposes ops from the 29-op grammar (add_decision, set_metric, add_milestone, add_env_host, etc.). The server validates invariants, applies via deterministic builder, computes state_hash, and persists. This is the 'client consolidates, chain verifies' architecture. Use after reading get_project_state + list_memories_filtered to identify what changed.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -342,13 +342,13 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
                     },
                     ops: {
                         type: "array",
-                        description: "Array of operations from the 22-op grammar. Each op has 'op' (type) + arguments. Use 'evidence_memory_ids' (array of memory IDs) instead of 'evidence' — the server resolves event_hashes automatically.",
+                        description: "Array of operations from the 29-op grammar. Each op has 'op' (type) + arguments. Use 'evidence_memory_ids' (array of memory IDs) instead of 'evidence' — the server resolves event_hashes automatically. The 7 add_env_*/set_env_status/verify_env/supersede_env ops maintain the `environment` section: where and how the owner works (hosts, services, repositories, operating rules). Store topology only — NEVER credentials, keys or passwords (the server rejects them).",
                         items: {
                             type: "object",
                             properties: {
                                 op: {
                                     type: "string",
-                                    description: "Operation type: add_decision, set_decision_status, supersede_decision, add_milestone, set_milestone_status, add_risk, set_risk_status, add_assumption, invalidate_assumption, add_open_question, answer_open_question, add_priority, set_priority_status, reorder_priority, set_focus, set_phase, set_vision, add_vocabulary, update_vocabulary, add_constraint, remove_constraint, set_metric"
+                                    description: "Operation type: add_decision, set_decision_status, supersede_decision, add_milestone, set_milestone_status, add_risk, set_risk_status, add_assumption, invalidate_assumption, add_open_question, answer_open_question, add_priority, set_priority_status, reorder_priority, set_focus, set_phase, set_vision, add_vocabulary, update_vocabulary, add_constraint, remove_constraint, set_metric, add_env_host, add_env_service, add_env_repo, add_env_rule, set_env_status, verify_env, supersede_env"
                                 },
                                 evidence_memory_ids: {
                                     type: "array",
@@ -618,12 +618,37 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
             const body = {};
             if (args.platform) body.platform = args.platform;
             const data = await apiPost(`/v1/project/${encodeURIComponent(args.project)}/role/${encodeURIComponent(args.role_id)}/assume`, body);
+            // Entorno de trabajo del owner, pinneado con el Brain. Se muestran solo los
+            // items 'active': lo retirado o superseded es historia, no estado vigente.
+            let envTxt = "";
+            const env = data.environment;
+            if (env && typeof env === "object") {
+                const act = (a) => (Array.isArray(a) ? a.filter(x => x && x.status === "active") : []);
+                const L = [];
+                act(env.hosts).forEach(h => L.push(
+                    `  host ${h.id}: ${h.name} (${h.role})` +
+                    (h.address ? ` @ ${h.address}` : "") +
+                    (h.access_method ? ` via ${h.access_method}${h.access_port ? ":" + h.access_port : ""}` : "")));
+                act(env.services).forEach(s => L.push(
+                    `  svc  ${s.id}: ${s.name}` + (s.port ? ` :${s.port}` : "") +
+                    (s.manager ? ` [${s.manager}]` : "") + (s.host_id ? ` en ${s.host_id}` : "") +
+                    (s.code_path ? ` -> ${s.code_path}` : "")));
+                act(env.repositories).forEach(r => L.push(
+                    `  repo ${r.id}: ${r.name} ${r.path}` + (r.remote ? ` <- ${r.remote}` : "")));
+                act(env.rules).forEach(r => L.push(
+                    `  regla ${r.id}: ${r.rule}` + (r.scope ? ` (${r.scope})` : "")));
+                if (L.length) envTxt =
+                    `\nENTORNO DE TRABAJO (declarado por el owner, pinneado con el Brain):\n` +
+                    L.join("\n") +
+                    `\nRespetalo. No pidas datos de conexion ni rutas que ya esten aca.\n`;
+            }
             return ok(
                 `Role assumed: ${args.role_id}@${args.platform || "mcp"} (session #${data.session_id})\n` +
                 `Contract: v${data.contract_version} ${data.contract_hash}\n` +
                 `Brain pinned: v${data.brain_version} ${data.brain_state_hash}\n` +
                 `Auto-release: ${data.auto_release_minutes} min\n` +
                 `Event hash: ${data.event_hash}\n` +
+                envTxt +
                 `Opera bajo las reglas del contrato. Cierra con release_role(${data.session_id}, summary).`
             );
         }

@@ -10,7 +10,7 @@ ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to an
 
 ## What's new in v2.5
 
-- **Project Brain** — `get_project_state` consolidates your atomic memories into a structured, versioned, verifiable project state (decisions, risks, constraints, metrics), and delivers active role contracts with it in a single call
+- **Project Brain** — `get_project_state` consolidates your atomic memories into a structured, versioned, verifiable project state (decisions, risks, constraints, metrics, and environment: where and how you work), and delivers active role contracts with it in a single call
 - **Verifiable Role Contracts (VRC)** — human-signed role contracts for AI agents: `get_role_contract` (read the contract), `assume_role` (open an audited Role Session), `release_role` (close with a summary)
 - **24 tools total** — memory ops, projects, Project Brain, roles, selective inject
 
@@ -63,13 +63,13 @@ Restart Claude Desktop. The 24 tools are now available.
 | Tool | Description |
 |---|---|
 | `get_project_state` | Consolidated, verifiable project state + active role contracts (state_hash, anchored on-chain) |
-| `update_project_state` | Propose structured ops (22-op grammar); server validates, builds, hashes, persists |
+| `update_project_state` | Propose structured ops (29-op grammar, incl. environment); server validates, builds, hashes, persists |
 
 ### Verifiable Role Contracts (3)
 | Tool | Description |
 |---|---|
 | `get_role_contract` | Read a role's contract: purpose, rules with checks and severity, working protocol |
-| `assume_role` | Open an audited Role Session under an active contract (pins contract + Brain hashes) |
+| `assume_role` | Open an audited Role Session under an active contract (pins contract + Brain hashes), and delivers the owner declared working environment |
 | `release_role` | Close a Role Session with a summary of work done and pending |
 
 ### Projects (5)
