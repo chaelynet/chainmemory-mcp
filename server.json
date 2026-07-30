@@ -6,12 +6,12 @@
     "url": "https://github.com/chaelynet/chainmemory-mcp",
     "source": "github"
   },
-  "version": "2.5.5",
+  "version": "2.5.6",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "chainmemory-mcp",
-      "version": "2.5.5",
+      "version": "2.5.6",
       "transport": {
         "type": "stdio"
       },

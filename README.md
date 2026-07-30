@@ -8,6 +8,14 @@
 
 ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted at rest (AES-256-GCM, per-user), verifiable with Merkle proofs, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
 
+## What's new in v2.5.6
+
+Three defects that made tools report confidently wrong things. No new tools.
+
+- **`list_project_templates` never listed anything.** It read `templates` / `template_id` from a response that returns `defaults` / `project_id`, so it always answered "No templates available" — which meant nobody could learn the id that `add_project_from_template` needs. The whole template flow was unreachable.
+- **`chainmemory_profile` got five of eight fields wrong.** It read `wallet`, `memory_count`, `trust_score`, `registration_block` and `sealed`; the API returns `owner`, `chain_memories` / `local_memories`, `reputation` and `active`. Every profile came back with an empty wallet, zero memories, `?` reputation and `Sealed: no`, regardless of the real state. It also had no handling for an API key with no registered identity, printing `AI Profile #undefined`.
+- **`update_project_state` hid the reason when every op was rejected.** Rejections were only rendered on the success path, but rejecting *all* ops leaves the state unchanged and takes the other branch — so the reply said `Rejected: 3` and nothing else. The only way to find out why was to guess again and pay the fee again.
+
 ## What's new in v2.5.5
 
 - **`audit_memory`** and **`audit_state`** — the two forensic audit endpoints, now reachable from any MCP client. Both accept **`dry_run: true`**, which returns the identical result **without charging**: an audit you can run as often as you like, and pay for only when you need the receipt on record. `audit_state` costs 5 AIC in its paid form, so the tools default to the dry run.

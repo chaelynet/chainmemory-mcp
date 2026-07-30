@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// ChainMemory MCP Server v2.5.5
+// ChainMemory MCP Server v2.5.6
 // ============================================================
 // All tools route through the ChainMemory REST API
 // (https://api.chainmemory.ai by default). This means:
@@ -177,7 +177,7 @@ function boundedInt(value, { def, min, max }) {
 // ------------------------------------------------------------
 
 const sv = new Server(
-    { name: "chainmemory", version: "2.5.5" },
+    { name: "chainmemory", version: "2.5.6" },
     { capabilities: { tools: {} } }
 );
 
@@ -852,11 +852,19 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         if (name === "list_project_templates") {
+            // v2.5.6: la API devuelve { defaults: [...] } con project_id, no
+            // { templates: [...] } con template_id. Leia dos campos que no
+            // existen, asi que SIEMPRE respondia "No templates available" y el
+            // flujo entero de plantillas era inalcanzable: sin el listado nadie
+            // podia saber que id pasarle a add_project_from_template.
             const data = await apiGet("/v1/projects/defaults");
-            if (!data.templates || data.templates.length === 0) return ok("No templates available.");
-            const lines = data.templates.map(t => {
+            const defaults = data.defaults || data.templates || [];
+            if (defaults.length === 0) return ok("No templates available.");
+            const lines = defaults.map(t => {
+                const id = t.project_id || t.template_id;
                 const kw = (t.keywords || []).length ? ` — keywords: ${t.keywords.join(', ')}` : '';
-                return `- ${t.template_id}: ${t.name}${kw}`;
+                const desc = t.description ? `\n    ${t.description}` : '';
+                return `- ${id}: ${t.name}${kw}${desc}`;
             });
             return ok(`Available templates:\n` + lines.join("\n") + `\n\nUse add_project_from_template with one of these IDs.`);
         }
@@ -916,17 +924,24 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
                 body,
                 { timeoutMs: 30000 }
             );
+            // v2.5.6: las lineas de rechazo se arman ANTES de bifurcar. Antes
+            // solo existian en la rama de exito, asi que el caso en que se
+            // rechazan TODAS las ops —que es justo cuando el estado no cambia y
+            // entra por `unchanged`— informaba "Rejected: 3" sin decir por que
+            // de ninguna. El unico camino para descubrir el motivo era probar
+            // otra forma y pagar el fee de nuevo.
+            const rejLines = (data.rejected || []).map(r =>
+                `  [${r.index}] ${r.op}: ${r.error}`
+            );
             if (data.unchanged) {
                 return ok(
                     `State unchanged (v${data.version}).\n` +
                     `Hash: ${data.state_hash}\n` +
                     `Applied: ${data.applied_count} | Rejected: ${(data.rejected || []).length}\n` +
-                    `Reason: ${data.message || 'no changes'}`
+                    `Reason: ${data.message || 'no changes'}` +
+                    (rejLines.length ? `\n\nRejected ops:\n${rejLines.join("\n")}` : "")
                 );
             }
-            const rejLines = (data.rejected || []).map(r =>
-                `  [${r.index}] ${r.op}: ${r.error}`
-            );
             return ok(
                 `State updated to v${data.version}.\n` +
                 `Hash: ${data.state_hash}\n` +
@@ -1182,17 +1197,38 @@ function formatStats(d) {
     return lines.join("\n");
 }
 
+// v2.5.6: cinco de los ocho campos que leia esta funcion no existen en la
+// respuesta de GET /v1/profile. La API devuelve owner, chain_memories,
+// local_memories, reputation y active; esto pedia wallet, memory_count,
+// trust_score, registration_block y sealed. Resultado: wallet vacia, memorias
+// siempre 0, trust siempre '?', bloque siempre '?' y sealed siempre 'no' —
+// para cualquier cuenta, incluso una perfectamente registrada.
+// Tampoco contemplaba la respuesta de cuenta sin ai_id, que imprimia
+// "AI Profile #undefined" con todo el resto en blanco.
 function formatProfile(d) {
-    return [
+    if (d.registered === false) {
+        return [
+            `No AI identity registered for this API key.`,
+            `- Local memories: ${d.local_memories ?? 0}`,
+            ``,
+            `Use chainmemory_register to create an on-chain identity.`
+        ].join("\n");
+    }
+    const lines = [
         `AI Profile #${d.ai_id}:`,
         `- Name: ${d.name}`,
         `- Model: ${d.model}`,
-        `- Wallet: ${d.wallet}`,
-        `- Memories written: ${d.memory_count ?? 0}`,
-        `- Trust score: ${d.trust_score ?? '?'}`,
-        `- Registered block: ${d.registration_block ?? '?'}`,
-        `- Sealed: ${d.sealed ? 'yes' : 'no'}`
-    ].join("\n");
+        `- Owner wallet: ${d.owner ?? '?'}`,
+        `- Memories on-chain: ${d.chain_memories ?? 0}`,
+        `- Memories local: ${d.local_memories ?? 0}`,
+        `- Reputation: ${d.reputation ?? '?'}`,
+        `- Active: ${d.active ? 'yes' : 'no'}`
+    ];
+    // pending_sync solo se muestra si hay algo pendiente: en cero es ruido.
+    if (d.pending_sync) {
+        lines.push(`- Pending sync: ${d.pending_sync} memory(ies) not yet anchored`);
+    }
+    return lines.join("\n");
 }
 
 function formatContext(d) {
@@ -1239,7 +1275,7 @@ function formatBalance(d) {
 async function main() {
     const transport = new StdioServerTransport();
     await sv.connect(transport);
-    console.error("[chainmemory-mcp v2.5.5] ready (API base: " + API_BASE + ")");
+    console.error("[chainmemory-mcp v2.5.6] ready (API base: " + API_BASE + ")");
 }
 
 main().catch(e => {
