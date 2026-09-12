@@ -1,0 +1,32 @@
+name: Publish to MCP Registry
+
+# Se lanza a mano desde la pestaña Actions (boton "Run workflow").
+# Usa OIDC: GitHub demuestra ante el registro que el workflow corre en
+# chaelynet/chainmemory-mcp, asi que no hace falta ningun login interactivo
+# ni guardar ningun token.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # imprescindible para OIDC
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Instalar mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Validar server.json antes de publicar
+        run: ./mcp-publisher validate
+
+      - name: Autenticar contra el registro (OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publicar
+        run: ./mcp-publisher publish
