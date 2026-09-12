@@ -1,17 +1,28 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.chaelynet/chainmemory",
-  "description": "Cross-model, cryptographically verifiable memory for Claude, ChatGPT, and any AI agent — own your AI's memory and carry it across every model.",
+  "title": "ChainMemory",
+  "description": "Persistent cross-model memory for AI agents: verifiable, portable, client-side encrypted.",
+  "websiteUrl": "https://chainmemory.ai",
+  "icons": [
+    {
+      "src": "https://chainmemory.ai/static/android-chrome-192.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "192x192"
+      ]
+    }
+  ],
   "repository": {
     "url": "https://github.com/chaelynet/chainmemory-mcp",
     "source": "github"
   },
-  "version": "2.5.6",
+  "version": "2.6.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "chainmemory-mcp",
-      "version": "2.5.6",
+      "version": "2.6.1",
       "transport": {
         "type": "stdio"
       },
@@ -22,6 +33,13 @@
           "format": "string",
           "isSecret": true,
           "name": "CHAINMEMORY_API_KEY"
+        },
+        {
+          "description": "12-word BIP-39 phrase for the blind vault. Optional: without it the server works exactly as before, but sealed:true is unavailable. Generate one with chainmemory_new_seed. It never leaves your machine and cannot be recovered.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "CHAINMEMORY_SEED_PHRASE"
         },
         {
           "description": "API base URL (default: https://api.chainmemory.ai)",
