@@ -1,0 +1,54 @@
+name: Change MCP Registry version status
+
+# Marca una version ya publicada en el registro oficial como deprecated (o la
+# vuelve a active). Se lanza a mano desde Actions con "Run workflow".
+#
+# Uso previsto: deprecar la 1.0.1, que sigue saliendo primera en la busqueda del
+# registro y pide AICHAIN_KEY en vez de CHAINMEMORY_API_KEY.
+#
+# 'deleted' NO se ofrece a proposito: borrar una version es irreversible y rompe
+# a cualquier cliente que la tenga fijada. Si alguna vez hace falta, se hace a
+# mano y con intencion, no desde un desplegable.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version a cambiar (ej. 1.0.1)"
+        required: true
+      status:
+        description: "Nuevo estado"
+        required: true
+        default: deprecated
+        type: choice
+        options:
+          - deprecated
+          - active
+      message:
+        description: "Mensaje visible junto al estado"
+        required: false
+        default: "Superseded. Use the latest version: it needs CHAINMEMORY_API_KEY, not a wallet private key."
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # imprescindible para OIDC
+      contents: read
+
+    steps:
+      - name: Instalar mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Autenticar contra el registro (OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      # Los inputs pasan por variables de entorno y no interpolados en el shell:
+      # un mensaje con comillas o $(...) no puede ejecutar nada.
+      - name: Cambiar estado
+        env:
+          V_STATUS: ${{ inputs.status }}
+          V_MESSAGE: ${{ inputs.message }}
+          V_VERSION: ${{ inputs.version }}
+        run: |
+          ./mcp-publisher status --status "$V_STATUS" --message "$V_MESSAGE" io.github.chaelynet/chainmemory "$V_VERSION"
