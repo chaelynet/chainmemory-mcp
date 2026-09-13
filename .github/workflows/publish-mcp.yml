@@ -1,11 +1,20 @@
 name: Publish to MCP Registry
 
-# Se lanza a mano desde la pestaña Actions (boton "Run workflow").
+# Se lanza de dos maneras:
+#   - SOLO, cada vez que cambia server.json en main. Asi el registro no vuelve
+#     a quedarse atras: el 12/9 npm publico 2.7.0 y el registro siguio en 2.6.1
+#     porque publicar dependia de acordarse de pulsar un boton.
+#   - a mano, desde Actions ("Run workflow"), por si hace falta repetir.
+# Si server.json cambia sin subir la version, publish falla por version
+# duplicada y no toca el registro: es inocuo.
 # Usa OIDC: GitHub demuestra ante el registro que el workflow corre en
 # chaelynet/chainmemory-mcp, asi que no hace falta ningun login interactivo
 # ni guardar ningun token.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [server.json]
 
 jobs:
   publish:
