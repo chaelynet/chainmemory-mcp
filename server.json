@@ -17,12 +17,12 @@
     "url": "https://github.com/chaelynet/chainmemory-mcp",
     "source": "github"
   },
-  "version": "2.6.1",
+  "version": "2.7.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "chainmemory-mcp",
-      "version": "2.6.1",
+      "version": "2.7.0",
       "transport": {
         "type": "stdio"
       },
@@ -49,14 +49,14 @@
           "name": "CHAINMEMORY_API_BASE"
         },
         {
-          "description": "Private key for AICHAIN wallet",
+          "description": "NOT NEEDED for normal use — leave it empty. Only the chainmemory_seal tool reads it, to sign a contract call yourself instead of letting the API anchor the memory (which chainmemory_remember already does). If you do set it, it is a wallet private key: use a dedicated wallet holding only a few AIC, never your main one. No other tool uses it.",
           "isRequired": false,
           "format": "string",
           "isSecret": true,
           "name": "AICHAIN_KEY"
         },
         {
-          "description": "RPC endpoint (default: https://rpc.chainmemory.ai)",
+          "description": "RPC endpoint used only by chainmemory_seal (default: https://rpc.chainmemory.ai). Leave it empty unless you set AICHAIN_KEY.",
           "isRequired": false,
           "format": "string",
           "isSecret": false,
