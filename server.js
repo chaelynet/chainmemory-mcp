@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// ChainMemory MCP Server v2.5.6
+// ChainMemory MCP Server v2.7.1
 // ============================================================
 // All tools route through the ChainMemory REST API
 // (https://api.chainmemory.ai by default). This means:
@@ -91,6 +91,25 @@ function loadEthers() {
 const API_BASE = process.env.CHAINMEMORY_API_BASE || "https://api.chainmemory.ai";
 const API_KEY = process.env.CHAINMEMORY_API_KEY || null;
 
+// ── Boveda ciega (v2.6.0) ───────────────────────────────────────────────────
+// La frase de 12 palabras NUNCA sale de esta maquina. Se usa para derivar la
+// clave en memoria y cifrar el texto ANTES de enviarlo; el servidor guarda un
+// blob que no puede leer. Sin la frase, este MCP funciona igual que antes.
+const SEED_PHRASE = process.env.CHAINMEMORY_SEED_PHRASE || null;
+let _blindClient = null;
+async function blindClient() {
+    if (_blindClient) return _blindClient;
+    if (!SEED_PHRASE) {
+        throw new Error(
+            "CHAINMEMORY_SEED_PHRASE is not set. Run chainmemory_new_seed to create " +
+            "a phrase, write it down on paper, add it to this MCP's env and restart."
+        );
+    }
+    const CMClient = require("./cm-client.js");
+    _blindClient = await CMClient.fromMnemonic(SEED_PHRASE);
+    return _blindClient;
+}
+
 // V2 contract address (Sprint 4 migration). Only used by chainmemory_seal.
 const V2_MEMORY_CONTRACT = "0xE84224e2660fd620aA6d09522718Ae0e5cF33F7d";
 const V2_SEAL_ABI = ["function sealMemory(uint256,uint256)"];
@@ -177,7 +196,9 @@ function boundedInt(value, { def, min, max }) {
 // ------------------------------------------------------------
 
 const sv = new Server(
-    { name: "chainmemory", version: "2.5.6" },
+    // v2.7.1: la version sale de package.json. Hasta la 2.7.0 estaba escrita a mano
+    // y el servidor se anunciaba como 2.5.6 en el handshake MCP.
+    { name: "chainmemory", version: require("./package.json").version },
     { capabilities: { tools: {} } }
 );
 
@@ -190,7 +211,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         // ── Memory ops ──
         {
             name: "chainmemory_remember",
-            description: "Write a permanent encrypted memory to ChainMemory. Auto-tags by content. Importance 1-10. Use for important decisions, learnings, milestones the user wants permanently recorded.",
+            description: "Write a permanent memory. FEE: 0.001 AIC. Auto-tags by content; importance 1-10. Use it for decisions, learnings and milestones worth keeping, not for small talk. Pass sealed:true to encrypt it in this client before sending (needs CHAINMEMORY_SEED_PHRASE): the server then stores a blob it cannot read. NOTE ON EVIDENCE: the event_hash of a plain memory is computed when it syncs to the chain (~30 s), not at write time, so a memory written just now CANNOT yet be cited in update_project_state — that call would be rejected with 422. Sealed memories carry their hash from the client and are citable immediately.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -204,9 +225,24 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
                         description: "Memory category"
                     },
                     importance: { type: "integer", minimum: 1, maximum: 10, description: "1-10 importance (default 5)" },
-                    platform: { type: "string", description: "Platform source (e.g. claude, chatgpt). Optional." }
+                    platform: { type: "string", description: "Platform source (e.g. claude, chatgpt). Optional." },
+                    sealed: { type: "boolean", description: "Encrypt this memory in the client before sending it (blind vault). Requires CHAINMEMORY_SEED_PHRASE. The server stores a blob it cannot read. NOTE: a sealed memory has no searchable text, so it will NOT appear in search_memories — but its project and tags ARE stored, so list_memories_filtered still finds it. Read the content back with chainmemory_open_sealed." }
                 },
                 required: ["summary"]
+            }
+        },
+        {
+            name: "chainmemory_new_seed",
+            description: "Generate a fresh 12-word BIP-39 phrase for the blind vault. Created locally, never sent anywhere and never stored by this server: write it down on paper. Losing it means losing every memory sealed with it, for you and for everyone. Free, no fee.",
+            inputSchema: { type: "object", properties: {} }
+        },
+        {
+            name: "chainmemory_open_sealed",
+            description: "Read a sealed memory: fetches the encrypted blob and decrypts it locally with CHAINMEMORY_SEED_PHRASE. Only works for memories sealed with that same phrase. Free, read-only.",
+            inputSchema: {
+                type: "object",
+                properties: { memory_id: { type: "integer", description: "Memory number to open" } },
+                required: ["memory_id"]
             }
         },
         {
@@ -313,7 +349,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "update_memory_tags",
-            description: "Update the tags of a memory. Tags are project labels for organization.",
+            description: "Replace the tags of an existing memory. Free. Tags are what keeps a memory findable by project, and the ONLY way to find a sealed one, since its content cannot be indexed. The project of a memory is stored as its first tag.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -325,7 +361,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "archive_memory",
-            description: "Archive a memory: it stops appearing in recall and inject lists, but remains on-chain. Reversible.",
+            description: "Archive a memory: it stops appearing in recall, listings and inject, but stays on-chain and keeps its proof. Free and reversible with unarchive_memory. This is what to use instead of deleting — nothing is ever removed from the chain.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -336,7 +372,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "unarchive_memory",
-            description: "Restore an archived memory.",
+            description: "Restore an archived memory so it shows up again in recall, listings and inject. Free. Nothing was ever deleted: archiving only hides it.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -349,12 +385,12 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         // ── Identity & stats ──
         {
             name: "chainmemory_stats",
-            description: "Get ChainMemory network stats: total AIs registered, total memories, current block, AIC supply.",
+            description: "Public network statistics: chain id, current block, registered AIs, total and episodic memories, AIC supply. Free and needs NO API key. Use it to check the network is alive — not to count your own memories, which is what chainmemory_profile is for.",
             inputSchema: { type: "object", properties: {} }
         },
         {
             name: "chainmemory_register",
-            description: "Register a new AI identity on-chain. Required once per AI before writing memories.",
+            description: "Register an AI identity on-chain. Free, once per identity. Most users never need it: an identity is created automatically the first time an API key writes. Use it only if you want to register explicitly before the first write.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -366,7 +402,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "chainmemory_profile",
-            description: "Get this AI's profile: name, model, memory count, trust score, registration block.",
+            description: "Get this AI's identity and memory counters: name, model, owner wallet, reputation, active status, and four counts that mean different things — chain_memories (anchored on-chain), local_memories (written), synced_memories and pending_sync. Free, read-only. Use it to check that writes are reaching the chain: pending_sync above zero means memories exist locally but are not anchored yet.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -376,7 +412,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "chainmemory_seal",
-            description: "Seal a memory permanently on-chain. Cannot be modified after. Requires AICHAIN_KEY env var. Direct contract call to V2.",
+            description: "Seal a memory permanently with a direct contract call. FEE: 0.001 AIC, and it is the ONLY tool that needs a wallet private key in AICHAIN_KEY. Irreversible. Most memories never need this: chainmemory_remember already anchors them through the API. Use it only when you want to seal one yourself, without trusting the server to do it.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -390,12 +426,12 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         // ── Projects ──
         {
             name: "list_projects",
-            description: "List the user's projects (custom tags for organizing memories).",
+            description: "List the user's projects with their numeric id, slug, keywords and colour. Free, read-only. Call it before create_project to avoid duplicates, and before delete_project, which needs the NUMERIC id from here and rejects the slug.",
             inputSchema: { type: "object", properties: {} }
         },
         {
             name: "create_project",
-            description: "Create a new project tag.",
+            description: "Create a project to group memories. Free. The project name becomes the FIRST TAG of every memory written under it, which is how list_memories_filtered finds them later — and the only way to find a sealed memory, whose content is not searchable. Call list_projects first to avoid duplicates.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -408,7 +444,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "delete_project",
-            description: "Delete a project tag. Memories with that tag keep the tag but the project metadata is removed.",
+            description: "Delete a project. Free. Takes the NUMERIC id from list_projects — passing the slug returns 400 'invalid id'. Memories keep their tag and stay findable; only the project metadata disappears, so nothing is lost.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -419,12 +455,12 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "list_project_templates",
-            description: "List built-in project templates (general, development, blockchain, business, personal, research).",
+            description: "List the built-in project templates with their ids. Free. Call it before add_project_from_template: that tool needs one of these ids and they are not guessable.",
             inputSchema: { type: "object", properties: {} }
         },
         {
             name: "add_project_from_template",
-            description: "Instantiate a built-in template as a user project. Use list_project_templates first to see available IDs.",
+            description: "Create a project from a built-in template, with its auto-tagging keywords already set. Free. Call list_project_templates first: the template id is required and cannot be guessed.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -437,7 +473,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         // ── Cross-platform context (v2.1) ──
         {
             name: "get_my_context",
-            description: "Retrieve the user's portable, verified AI conversation history from ChainMemory. Returns a condensed summary plus recent memories from all platforms (ChatGPT, Claude, Gemini, Perplexity, etc), with cryptographic verification status. Use this at the start of a conversation to provide continuity across AI providers.",
+            description: "Retrieve the user's portable conversation history ACROSS PROVIDERS: a condensed summary plus recent memories from ChatGPT, Claude, Gemini, Perplexity and others, with their verification status. Free, read-only. Use it ONCE when starting with a model that has no history of its own, to carry context between providers. For the latest memories of a specific project, or to keep working inside a session already under way, use chainmemory_recall instead — this one is broader and slower.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -462,7 +498,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "update_project_state",
-            description: "Propose structured operations to update a project's consolidated state (Project Brain). The LLM analyzes new memories and proposes ops from the 29-op grammar (add_decision, set_metric, add_milestone, add_env_host, etc.). The server validates invariants, applies via deterministic builder, computes state_hash, and persists. This is the 'client consolidates, chain verifies' architecture. Use after reading get_project_state + list_memories_filtered to identify what changed.",
+            description: "Apply operations to a project's consolidated state (Project Brain). FEE: 0.05 AIC plus 0.005 per applied op. Ops come from the 29-op grammar (add_decision, add_milestone, add_risk, set_focus, add_env_host...); the server validates invariants, applies them with a deterministic builder and computes the new state_hash. Use after get_project_state + list_memories_filtered to see what actually changed. EVIDENCE IS WHAT MAKES THE STATE WORTH ANYTHING: cite the memories backing each op with evidence_memory_ids. An op with no evidence is stored with evidence_root 0x000...0 — state with no provenance, indistinguishable from your own opinion, and the chain seals it just the same because it verifies hashes, not correctness. If any cited memory cannot be resolved the WHOLE call is rejected with 422 and nothing is written or charged; the usual cause is citing a memory before it anchors. CLOSED VALUE SETS, a wrong one costs a rejected op: severity is low, med or high (NOT medium, NOT critical); risk status open or closed; milestone status planned, in_progress or done; decision status proposed, confirmed, rejected or superseded.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -561,7 +597,7 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "get_inject_history",
-            description: "Get the history of selective inject operations made by the user (timestamps, memory counts, costs, tx hashes).",
+            description: "History of selective injects: timestamps, how many memories, cost in AIC and transaction hashes. Free, read-only. Use it to audit what was injected and what it cost; for the current balance use get_inject_balance, and to price an injection before paying use quote_inject.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -582,6 +618,34 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
         // ── Memory ops ──
         if (name === "chainmemory_remember") {
+            if (args.sealed) {
+                const client = await blindClient();
+                const texto = args.content || args.summary;
+                if (typeof texto !== "string" || !texto.trim()) return err("summary (or content) is required");
+                const s = await client.seal(texto);
+                const sealedBody = {
+                    blob_b64: s.blob_b64,
+                    event_hash: s.event_hash,
+                    plain_len: s.plain_len,
+                    category: args.category || "INTERACTION",
+                    importance: args.importance ?? 5
+                };
+                if (args.platform) sealedBody.platform = args.platform;
+                if (args.project && typeof args.project === "string") sealedBody.project = args.project;
+                if (Array.isArray(args.tags) && args.tags.length) sealedBody.tags = args.tags;
+                const d = await apiPost("/v1/memory/sealed", sealedBody, { timeoutMs: 30000 });
+                return ok(
+                    `MEMORIA SELLADA #${d.memory_number} written.\n` +
+                    `Event hash: ${s.event_hash}\n` +
+                    `Encrypted client-side: the server stored ${s.blob_b64.length} base64 chars it cannot read.\n` +
+                    `Plaintext length: ${s.plain_len} bytes.\n` +
+                    `Tags: ${(d.tags || []).join(', ') || '(none)'}
+` +
+                    `NOTE: no searchable text, so it will not appear in search_memories. It DOES ` +
+                    `appear in list_memories_filtered by project/tag. Read the content with ` +
+                    `chainmemory_open_sealed(${d.memory_number}).`
+                );
+            }
             const body = {
                 summary: args.content || args.summary,
                 category: args.category || "INTERACTION",
@@ -601,6 +665,38 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
                 `Tags: ${(data.tags || []).join(', ') || '(none)'}\n` +
                 `Verificacion: usa get_memory_proof(${data.memory_number}) cuando ancle.`
             );
+        }
+
+        if (name === "chainmemory_new_seed") {
+            const CMBip39 = require("./cm-bip39.js");
+            const phrase = await CMBip39.generateMnemonic();
+            return ok(
+                "New 12-word phrase — shown once, stored nowhere:\n\n" +
+                phrase + "\n\n" +
+                "1. Write it on paper. Nobody can recover it for you, ever.\n" +
+                "2. Set CHAINMEMORY_SEED_PHRASE to it in this MCP's env.\n" +
+                "3. Restart the MCP, then pass sealed:true to chainmemory_remember.\n\n" +
+                "Memories sealed with this phrase cannot be read by the server, by " +
+                "ChainMemory, or by anyone who copies the database."
+            );
+        }
+
+        if (name === "chainmemory_open_sealed") {
+            const client = await blindClient();
+            const id = pathInt(args.memory_id, "memory_id");
+            const data = await apiGet(`/v1/memory/${id}/blob`);
+            const blob = data.blob_b64 || data.content_blob || data.blob || null;
+            if (!blob) return err(`Memory ${id} has no sealed blob — it may be a plain memory.`);
+            let texto;
+            try {
+                texto = await client.open(blob);
+            } catch (e) {
+                return err(
+                    `Could not decrypt memory ${id}. The usual cause is that it was sealed ` +
+                    `with a different 12-word phrase than the one in CHAINMEMORY_SEED_PHRASE.`
+                );
+            }
+            return ok(`Memory #${id} — sealed, decrypted locally:\n\n${texto}`);
         }
 
         if (name === "chainmemory_recall") {
@@ -1275,7 +1371,7 @@ function formatBalance(d) {
 async function main() {
     const transport = new StdioServerTransport();
     await sv.connect(transport);
-    console.error("[chainmemory-mcp v2.5.6] ready (API base: " + API_BASE + ")");
+    console.error("[chainmemory-mcp v" + require("./package.json").version + "] ready (API base: " + API_BASE + ")");
 }
 
 main().catch(e => {

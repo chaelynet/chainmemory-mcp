@@ -6,7 +6,77 @@
 
 > Cross-model, cryptographically verifiable memory for Claude, ChatGPT, and any AI agent — own your AI's memory and carry it across every model.
 
-ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted at rest (AES-256-GCM, per-user), verifiable with Merkle proofs, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
+ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted (AES-256-GCM), anchored on-chain one by one so anyone can verify them, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
+
+## What's new in v2.7.1
+
+- **Correct version in the MCP handshake.** The server announced itself as
+  `2.5.6` to every client, whatever package was installed. It now reads the
+  version from `package.json`, so the two cannot drift again.
+- **`quote_inject` reports missing memories correctly** — fixed on the API
+  side (2026-09-14), no client change needed. Before, it listed memories it
+  had found as *not found* and told the agent to fix a list that was fine.
+- `get_inject_history` responses now include `memory_numbers`, the #N of
+  each injected memory.
+
+## What's new in v2.7.0
+
+**Tool descriptions rewritten for agents, not for humans.** An audit of all 36
+found that only 39% said *when* to use them, 25% stated their limits, and two
+charged without saying so. One of them was plainly wrong.
+
+- `chainmemory_profile` promised `memory count`, `trust score` and
+  `registration block`. **None of those fields exist** — the API returns
+  `chain_memories`, `local_memories`, `synced_memories`, `pending_sync`,
+  `reputation`, `owner` and `active`. The v2.5.6 release fixed the code that
+  asked for the wrong fields; the description kept advertising them.
+- `chainmemory_remember` (0.001 AIC) and `update_project_state`
+  (0.05 + 0.005 per op) now state their fee. They are the most used and the most
+  expensive tool respectively.
+- `update_project_state` now documents the **closed value sets**. `severity` is
+  `low`, `med` or `high` — *not* `medium`, *not* `critical`. A wrong value costs
+  a rejected op and the fee is charged anyway.
+- `get_my_context` and `chainmemory_recall` both said "use at conversation
+  start". Now each says when to use it *instead of* the other.
+- Twelve one-line descriptions gained their cost, their limits and the gotchas
+  that cost a failed call: `delete_project` needs the **numeric id** and rejects
+  the slug; `add_project_from_template` and `list_project_templates` deal in ids
+  that cannot be guessed; `chainmemory_seal` is the only tool requiring a wallet
+  private key.
+
+No behaviour changed: same 36 tools, same endpoints, same fees. What changed is
+what the agent is told before it chooses.
+
+## What's new in v2.6.1
+
+Documentation fix only, no code changes. The blind vault section described the
+verification step wrongly: `GET /v1/memory/<id>/decrypted` does **not** fail on a
+sealed memory — it returns `200` with `scheme: "sealed"` and the encrypted blob.
+The guarantee is the same (the operator never gets your text) but the observed
+behaviour was not what we documented. Found by running the first end-to-end test
+against the live API.
+
+## What's new in v2.6.0
+
+**Blind vault — memories the server cannot read.** Pass `sealed: true` to
+`chainmemory_remember` and the text is encrypted on your own machine before it
+leaves: AES-256-GCM with a key derived from twelve BIP-39 words that never touch
+the network. ChainMemory stores an opaque blob and anchors its hash. Same fee as
+a normal write — privacy costs nothing extra.
+
+- `chainmemory_new_seed` creates the phrase locally. Shown once, stored nowhere.
+- `chainmemory_open_sealed` fetches the blob and decrypts it here, not there.
+- Without `CHAINMEMORY_SEED_PHRASE`, everything behaves exactly as in 2.5.6.
+
+**One honest limitation:** a sealed memory is stored with no searchable text, so
+it will not appear in `search_memories` — the server has nothing to index. Its
+project and tags *are* stored, so `list_memories_filtered` still finds it by
+project; you then read the content with `chainmemory_open_sealed`. Losing full
+text search is the direct consequence of the server being unable to read it, and
+there is no way around that which keeps the guarantee.
+
+**If you lose the twelve words, the memories sealed with them are gone** — for
+you and for everyone. Write them on paper.
 
 ## What's new in v2.5.6
 
@@ -50,7 +120,7 @@ Three defects that made tools report confidently wrong things. No new tools.
 
 - **Project Brain** — `get_project_state` consolidates your atomic memories into a structured, versioned, verifiable project state (decisions, risks, constraints, metrics, and environment: where and how you work), and delivers active role contracts with it in a single call
 - **Verifiable Role Contracts (VRC)** — human-signed role contracts for AI agents: `get_role_contract` (read the contract), `assume_role` (open an audited Role Session), `release_role` (close with a summary)
-- **34 tools total** — memory ops, semantic search, verification proofs, projects, Project Brain, role contracts with audited sessions, selective inject
+- **36 tools total** — memory ops, semantic search, verification proofs, projects, Project Brain, role contracts with audited sessions, selective inject
 
 ## Quick start
 
@@ -76,7 +146,7 @@ Edit your Claude Desktop config (`~/Library/Application Support/Claude/claude_de
 }
 ```
 
-Restart Claude Desktop. The 34 tools are now available.
+Restart Claude Desktop. The 36 tools are now available.
 
 ### 3. Try it
 
@@ -86,7 +156,7 @@ Restart Claude Desktop. The 34 tools are now available.
 - *"Which roles exist for my-app?"* → `list_role_contracts`
 - *"Assume the architect role for my-app"* → `assume_role` (audited Role Session)
 
-## All 34 tools
+## All 36 tools
 
 ### Memory ops (8)
 | Tool | Description |
@@ -99,6 +169,12 @@ Restart Claude Desktop. The 34 tools are now available.
 | `update_memory_tags` | Change tags on an existing memory |
 | `archive_memory` | Hide a memory from recall (reversible) |
 | `unarchive_memory` | Restore an archived memory |
+
+### Blind vault (2)
+| Tool | Description |
+|---|---|
+| `chainmemory_new_seed` | Generate a 12-word BIP-39 phrase locally. Shown once, never stored or transmitted |
+| `chainmemory_open_sealed` | Fetch a sealed memory's blob and decrypt it on this machine |
 
 ### Verification (4)
 | Tool | Description |
@@ -160,6 +236,7 @@ Restart Claude Desktop. The 34 tools are now available.
 |---|---|---|
 | `CHAINMEMORY_API_KEY` | **Yes** | Your API key from the faucet |
 | `CHAINMEMORY_API_BASE` | No | Default `https://api.chainmemory.ai` |
+| `CHAINMEMORY_SEED_PHRASE` | No | 12 words for the blind vault. Without it `sealed: true` is unavailable and everything else works normally |
 | `AICHAIN_KEY` | No | Wallet private key — only required by `chainmemory_seal` |
 | `AICHAIN_RPC` | No | Default `https://rpc.chainmemory.ai` — only for `chainmemory_seal` |
 
@@ -172,6 +249,32 @@ For most users only `CHAINMEMORY_API_KEY` is needed.
 3. **Optimistic response (<500ms)**: plaintexts returned immediately, transactions queued
 4. Background: 50% of the fee goes to the ecosystem treasury, 50% is burned
 5. `get_inject_history` shows confirmation status
+
+## How the blind vault works
+
+1. `chainmemory_new_seed` generates twelve BIP-39 words from the official 2048
+   word list, with checksum. Write them down; they are shown once.
+2. Put them in `CHAINMEMORY_SEED_PHRASE` and restart the MCP.
+3. On `sealed: true`, the phrase is stretched into a seed with PBKDF2-HMAC-SHA512,
+   the content key is derived with HKDF-SHA256, and the text is sealed with
+   AES-256-GCM into a versioned envelope. Only the blob and a SHA-256 hash are
+   sent to `POST /v1/memory/sealed`.
+4. `chainmemory_open_sealed` retrieves the blob and decrypts it locally.
+
+No key material is transmitted at any point, and no recovery path exists — a
+recovery path is exactly what an operator would need in order to read your
+memories.
+
+**What it does not cover:** metadata stays visible (timestamps, sizes, project),
+memories written before sealing cannot be sealed retroactively, and the on-chain
+anchor is still signed by the server. The operator is trusted to anchor, never
+to read.
+
+**Verify the claim yourself:** seal a memory, then call
+`GET /v1/memory/<id>/decrypted` with your API key. It returns `200` with
+`scheme: "sealed"` and the encrypted blob — never the text. That endpoint
+derives its key from the API key, which is what an operator would have; faced
+with a sealed memory it has nothing to decrypt.
 
 ## Architecture
 
