@@ -997,19 +997,23 @@ async function dispatchTool(request) {
         // ── Cross-platform context ──
         // -- Project Brain: estado consolidado por proyecto --
         if (name === "get_project_state") {
-            const data = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/state`);
+            // [guardas-de-ruta-20260917] Sin esto, un name ausente viaja como el texto
+            // "undefined" y la respuesta es "project state not found": el error manda
+            // a buscar el problema al proyecto, no al parametro que falta.
+            const proyecto = pathStr(args.name, "name");
+            const data = await apiGet(`/v1/project/${proyecto}/state`);
             // VRC v2.5.0: contratos de rol activos compuestos en la entrega.
             // v2.5.4: include_roles permite pedir el state sin el texto completo de los
             // contratos (en proyectos con varios VRC firmados eso agrega miles de chars).
             const includeRoles = args.include_roles !== false;
             try {
-                const rl = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/roles`);
+                const rl = await apiGet(`/v1/project/${proyecto}/roles`);
                 const act = (rl.roles || []).filter(r => r.status === "active");
                 if (act.length) {
                     if (includeRoles) {
                         const contracts = [];
                         for (const r of act) {
-                            const c = await apiGet(`/v1/project/${encodeURIComponent(args.name)}/role/${encodeURIComponent(r.role_id)}`);
+                            const c = await apiGet(`/v1/project/${proyecto}/role/${encodeURIComponent(r.role_id)}`);
                             contracts.push({ role_id: c.role_id, version: c.version, contract_hash: c.contract_hash, signed_at: c.signed_at, integrity: c.integrity, contract: c.contract });
                         }
                         data.active_role_contracts = contracts;
@@ -1040,7 +1044,7 @@ async function dispatchTool(request) {
                 body.consolidated_until_event = args.consolidated_until_event;
             }
             const data = await apiPost(
-                `/v1/project/${encodeURIComponent(args.project)}/state/ops`,
+                `/v1/project/${pathStr(args.project, "project")}/state/ops`,
                 body,
                 { timeoutMs: 30000 }
             );
@@ -1081,7 +1085,7 @@ async function dispatchTool(request) {
 
         // ── VRC (v2.5.0) ──
         if (name === "list_role_contracts") {
-            const data = await apiGet(`/v1/project/${encodeURIComponent(args.project)}/roles`);
+            const data = await apiGet(`/v1/project/${pathStr(args.project, "project")}/roles`);
             const roles = data.roles || [];
             if (!roles.length) return ok(`El proyecto '${args.project}' no tiene roles definidos.`);
             const lines = roles.map(r => {
@@ -1129,7 +1133,7 @@ async function dispatchTool(request) {
         if (name === "assume_role") {
             const body = {};
             if (args.platform) body.platform = args.platform;
-            const data = await apiPost(`/v1/project/${encodeURIComponent(args.project)}/role/${encodeURIComponent(args.role_id)}/assume`, body);
+            const data = await apiPost(`/v1/project/${pathStr(args.project, "project")}/role/${pathStr(args.role_id, "role_id")}/assume`, body);
             // Entorno de trabajo del owner, pinneado con el Brain. Se muestran solo los
             // items 'active': lo retirado o superseded es historia, no estado vigente.
             let envTxt = "";
