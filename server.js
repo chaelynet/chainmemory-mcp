@@ -115,6 +115,17 @@ let _blindClient = null;
 async function blindClient() {
     if (_blindClient) return _blindClient;
     if (!SEED_PHRASE) {
+        // Si hay contexto de request estamos en el endpoint remoto, donde la boveda
+        // no existe a proposito: mandar ahi la frase de 12 palabras seria justamente
+        // lo que la boveda evita. Decirlo asi, y no "configura la variable".
+        if (requestContext.getStore()) {
+            throw new Error(
+                "Sealing is not available on the remote endpoint: it would require sending " +
+                "the 12-word phrase to the server, which is exactly what the blind vault " +
+                "prevents. Install the local MCP (npx chainmemory-mcp) to seal memories. " +
+                "Nothing was written."
+            );
+        }
         throw new Error(
             "CHAINMEMORY_SEED_PHRASE is not set. Run chainmemory_new_seed to create " +
             "a phrase, write it down on paper, add it to this MCP's env and restart."
