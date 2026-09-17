@@ -89,7 +89,22 @@ function loadEthers() {
 // ------------------------------------------------------------
 
 const API_BASE = process.env.CHAINMEMORY_API_BASE || "https://api.chainmemory.ai";
-const API_KEY = process.env.CHAINMEMORY_API_KEY || null;
+
+// [clave-por-request-20260917] La clave ya no es una constante de modulo.
+// En stdio hay un proceso por usuario y la variable de entorno alcanza. En el
+// endpoint remoto un mismo proceso atiende a muchos a la vez: si la clave
+// quedara compartida, dos usuarios concurrentes podrian cruzarse y uno leer las
+// memorias del otro. Cada request corre dentro de su propio contexto y de ahi
+// sale la clave; sin contexto se cae al entorno, que es exactamente el caso stdio.
+const { AsyncLocalStorage } = require("node:async_hooks");
+const requestContext = new AsyncLocalStorage();
+const ENV_API_KEY = process.env.CHAINMEMORY_API_KEY || null;
+
+function currentApiKey() {
+    const ctx = requestContext.getStore();
+    if (ctx && ctx.apiKey) return ctx.apiKey;
+    return ENV_API_KEY;
+}
 
 // ── Boveda ciega (v2.6.0) ───────────────────────────────────────────────────
 // La frase de 12 palabras NUNCA sale de esta maquina. Se usa para derivar la
@@ -119,9 +134,11 @@ const V2_SEAL_ABI = ["function sealMemory(uint256,uint256)"];
 // ------------------------------------------------------------
 
 async function apiRequest(method, path, body = null, { timeoutMs = 15000 } = {}) {
-    if (!API_KEY) {
+    const apiKey = currentApiKey();
+    if (!apiKey) {
         throw new Error(
-            "CHAINMEMORY_API_KEY env variable not set. " +
+            "No ChainMemory API key for this request. Set CHAINMEMORY_API_KEY " +
+            "(stdio) or send the X-API-Key header (remote). " +
             "Get one at https://faucet.chainmemory.ai"
         );
     }
@@ -132,7 +149,7 @@ async function apiRequest(method, path, body = null, { timeoutMs = 15000 } = {})
         const opts = {
             method,
             headers: {
-                "x-api-key": API_KEY,
+                "x-api-key": apiKey,
                 "Content-Type": "application/json"
             },
             signal: controller.signal
@@ -195,19 +212,16 @@ function boundedInt(value, { def, min, max }) {
 // Server setup
 // ------------------------------------------------------------
 
-const sv = new Server(
-    // v2.7.1: la version sale de package.json. Hasta la 2.7.0 estaba escrita a mano
-    // y el servidor se anunciaba como 2.5.6 en el handshake MCP.
-    { name: "chainmemory", version: require("./package.json").version },
-    { capabilities: { tools: {} } }
-);
+// [clave-por-request-20260917] El Server se arma en buildServer(), al final del archivo, para
+// que el envoltorio HTTP pueda pedir uno con un subconjunto de herramientas.
+// La version sale de package.json desde la 2.7.1; antes estaba escrita a mano y
+// el servidor se anunciaba como 2.5.6 en el handshake MCP.
 
 // ------------------------------------------------------------
 // Tool list
 // ------------------------------------------------------------
 
-sv.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
+const TOOLS = [
         // ── Memory ops ──
         {
             name: "chainmemory_remember",
@@ -605,14 +619,13 @@ sv.setRequestHandler(ListToolsRequestSchema, async () => ({
                 }
             }
         }
-    ]
-}));
+];
 
 // ------------------------------------------------------------
 // Tool dispatcher
 // ------------------------------------------------------------
 
-sv.setRequestHandler(CallToolRequestSchema, async (request) => {
+async function dispatchTool(request) {
     const { name, arguments: args = {} } = request.params;
 
     try {
@@ -1183,7 +1196,7 @@ sv.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         return err(e.message || String(e));
     }
-});
+}
 
 // ------------------------------------------------------------
 // Inject implementation (optimistic by default)
@@ -1368,13 +1381,41 @@ function formatBalance(d) {
 // Main
 // ------------------------------------------------------------
 
+// [clave-por-request-20260917] buildServer arma un Server con las herramientas que se le pasen.
+// Sin argumentos son las 36 de siempre (stdio). El envoltorio remoto le pasa un
+// subconjunto, y entonces todo lo que no este en esa lista se rechaza POR NOMBRE
+// aunque el cliente lo pida: no alcanza con no publicarlo. Asi las tres
+// herramientas de la boveda ciega no existen del lado remoto ni siquiera como
+// llamada posible, que es la unica forma de que la frase de 12 palabras no viaje.
+function buildServer({ tools = TOOLS } = {}) {
+    const sv = new Server(
+        { name: "chainmemory", version: require("./package.json").version },
+        { capabilities: { tools: {} } }
+    );
+    const permitidas = new Set(tools.map(t => t.name));
+    sv.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+    sv.setRequestHandler(CallToolRequestSchema, async (request) => {
+        if (!permitidas.has(request.params.name)) {
+            return err(`Unknown tool: ${request.params.name}`);
+        }
+        return dispatchTool(request);
+    });
+    return sv;
+}
+
 async function main() {
     const transport = new StdioServerTransport();
-    await sv.connect(transport);
+    await buildServer().connect(transport);
     console.error("[chainmemory-mcp v" + require("./package.json").version + "] ready (API base: " + API_BASE + ")");
 }
 
-main().catch(e => {
-    console.error("Fatal:", e);
-    process.exit(1);
-});
+module.exports = { TOOLS, buildServer, dispatchTool, requestContext, API_BASE };
+
+// Solo arranca stdio si se ejecuta directo. Requerido como modulo (el envoltorio
+// HTTP) no abre ningun transporte ni toca stdin.
+if (require.main === module) {
+    main().catch(e => {
+        console.error("Fatal:", e);
+        process.exit(1);
+    });
+}
