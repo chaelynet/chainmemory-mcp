@@ -1,0 +1,10 @@
+Copia de los archivos del motor propio que corren en el MCP.
+Origen: repo motor (sin-dependencias-20260923/motor), commit f40fc61.
+Se copian tal cual: si cambian alla, se vuelven a copiar y se actualiza esta lista.
+
+1086dce5847b03aeb5811f9768292c0194c03b41d7b2d3832c4dc541e07c9cb5 *ensamblador.mjs
+9a8953ad3f7bdb6f14cef0337faaf7c2a2b873a372664d944255e0c061427090 *nucleo.mjs
+46a5ce19c5f6009a71fa397fa6110b83b1d4fb0b87a3643679a73465a20201d1 *onnx.mjs
+85641d6a6edd44e36a065bfd2c9a2ee7b50898e7f0cb95342619c58cb93d2061 *tokenizador.mjs
+194f0fe6a61149c4bd1b278517967c5e00de29c8aba33f95b2ab1e4c4a4d277a *tablas-unicode.mjs
+d74e7312769748f3f093694dd6553addd29f4f80e5a61ae82ebdae8c1d3bbf72 *motor.mjs

@@ -82,12 +82,19 @@ const SELLADO_LOCAL =
     "to avoid. Install the local MCP (npx chainmemory-mcp) if you need it.";
 
 function adaptarParaRemoto(t) {
+    // search_memories: lo de la boveda (consulta como vector, selladas abiertas
+    // aca) no aplica en el servidor, donde no hay frase.
+    if (t.name === "search_memories") {
+        const copia = JSON.parse(JSON.stringify(t));
+        copia.description = copia.description.replace(/ With the blind vault configured[^]*?\.(?=["\s]|$)/, "");
+        return copia;
+    }
     if (t.name !== "chainmemory_remember") return t;
     const copia = JSON.parse(JSON.stringify(t));
     copia.description = copia.description
-        .replace(
-            "Pass sealed:true to encrypt it in this client before sending (needs CHAINMEMORY_SEED_PHRASE): " +
-            "the server then stores a blob it cannot read. ", "")
+        // Toda la oracion que ofrece sealed:true, termine como termine: si la
+        // descripcion del MCP local cambia, el remoto igual no la ofrece.
+        .replace(/Pass sealed:true[^]*?\.\s(?=[A-Z])/, "")
         .replace(" Sealed memories carry their hash from the client and are citable immediately.", SELLADO_LOCAL);
     if (copia.inputSchema && copia.inputSchema.properties) delete copia.inputSchema.properties.sealed;
     return copia;

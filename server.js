@@ -111,6 +111,12 @@ function currentApiKey() {
 // clave en memoria y cifrar el texto ANTES de enviarlo; el servidor guarda un
 // blob que no puede leer. Sin la frase, este MCP funciona igual que antes.
 const SEED_PHRASE = process.env.CHAINMEMORY_SEED_PHRASE || null;
+// [vector-propio-20260926] Con boveda, el vector de busqueda se calcula en esta
+// maquina con el motor propio (motor/, sin dependencias): la memoria sellada se
+// puede encontrar sin que el servidor la lea, y la consulta viaja como vector,
+// no como texto. Sin boveda no se usa ni se baja nada (la busqueda sigue como
+// siempre): la decision del dueno fue que solo cambie para quien usa la boveda.
+const cmEmbed = require("./cm-embed.js");
 let _blindClient = null;
 async function blindClient() {
     if (_blindClient) return _blindClient;
@@ -236,7 +242,7 @@ const TOOLS = [
         // ── Memory ops ──
         {
             name: "chainmemory_remember",
-            description: "Write a permanent memory. FEE: 0.001 AIC. Auto-tags by content; importance 1-10. Use it for decisions, learnings and milestones worth keeping, not for small talk. Pass sealed:true to encrypt it in this client before sending (needs CHAINMEMORY_SEED_PHRASE): the server then stores a blob it cannot read. NOTE ON EVIDENCE: the event_hash of a plain memory is computed when it syncs to the chain (~30 s), not at write time, so a memory written just now CANNOT yet be cited in update_project_state — that call would be rejected with 422. Sealed memories carry their hash from the client and are citable immediately.",
+            description: "Write a permanent memory. FEE: 0.001 AIC. Auto-tags by content; importance 1-10. Use it for decisions, learnings and milestones worth keeping, not for small talk. Pass sealed:true to encrypt it in this client before sending (needs CHAINMEMORY_SEED_PHRASE): the server then stores a blob it cannot read, and the search vector is computed on this machine so the memory can still be found. NOTE ON EVIDENCE: the event_hash of a plain memory is computed when it syncs to the chain (~30 s), not at write time, so a memory written just now CANNOT yet be cited in update_project_state — that call would be rejected with 422. Sealed memories carry their hash from the client and are citable immediately.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -251,7 +257,7 @@ const TOOLS = [
                     },
                     importance: { type: "integer", minimum: 1, maximum: 10, description: "1-10 importance (default 5)" },
                     platform: { type: "string", description: "Platform source (e.g. claude, chatgpt). Optional." },
-                    sealed: { type: "boolean", description: "Encrypt this memory in the client before sending it (blind vault). Requires CHAINMEMORY_SEED_PHRASE. The server stores a blob it cannot read. NOTE: a sealed memory has no searchable text, so it will NOT appear in search_memories — but its project and tags ARE stored, so list_memories_filtered still finds it. Read the content back with chainmemory_open_sealed." }
+                    sealed: { type: "boolean", description: "Encrypt this memory in the client before sending it (blind vault). Requires CHAINMEMORY_SEED_PHRASE. The server stores a blob it cannot read. Its search vector is computed on this machine (the first time, the 45 MB search model is downloaded from models.chainmemory.ai and checked against its on-chain hash), so it DOES appear in search_memories, decrypted here. Its project and tags are stored too, so list_memories_filtered finds it. Read one directly with chainmemory_open_sealed." }
                 },
                 required: ["summary"]
             }
@@ -282,7 +288,7 @@ const TOOLS = [
         },
         {
             name: "search_memories",
-            description: "SEMANTIC search over the user's memories (cosine similarity over cached embeddings, blended with recency and importance). Returns the FULL text of each match — unlike chainmemory_recall and list_memories_filtered, which return 80-character previews. Use this whenever you need to FIND something rather than list the latest.",
+            description: "SEMANTIC search over the user's memories (cosine similarity over cached embeddings, blended with recency and importance). Returns the FULL text of each match — unlike chainmemory_recall and list_memories_filtered, which return 80-character previews. Use this whenever you need to FIND something rather than list the latest. With the blind vault configured, the query is turned into a vector on this machine and only the vector is sent, and sealed matches are decrypted here.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -647,6 +653,13 @@ async function dispatchTool(request) {
                 const texto = args.content || args.summary;
                 if (typeof texto !== "string" || !texto.trim()) return err("summary (or content) is required");
                 const s = await client.seal(texto);
+                // El vector se calcula sobre el texto plano, que solo existe aca. Si no
+                // se puede (sin red la primera vez que se baja el modelo), la memoria se
+                // guarda igual, sellada, y la respuesta dice que no va a aparecer en la
+                // busqueda: perder la memoria seria peor que perder la busqueda.
+                const emb = await cmEmbed.crearEmbedder();
+                let vector = null;
+                if (emb) { try { vector = await emb.embed(texto); } catch (e) { vector = null; } }
                 const sealedBody = {
                     blob_b64: s.blob_b64,
                     event_hash: s.event_hash,
@@ -657,7 +670,9 @@ async function dispatchTool(request) {
                 if (args.platform) sealedBody.platform = args.platform;
                 if (args.project && typeof args.project === "string") sealedBody.project = args.project;
                 if (Array.isArray(args.tags) && args.tags.length) sealedBody.tags = args.tags;
+                if (vector) sealedBody.embedding = vector;
                 const d = await apiPost("/v1/memory/sealed", sealedBody, { timeoutMs: 30000 });
+                const buscable = !!vector && d.searchable !== false;
                 return ok(
                     `MEMORIA SELLADA #${d.memory_number} written.\n` +
                     `Event hash: ${s.event_hash}\n` +
@@ -665,8 +680,12 @@ async function dispatchTool(request) {
                     `Plaintext length: ${s.plain_len} bytes.\n` +
                     `Tags: ${(d.tags || []).join(', ') || '(none)'}
 ` +
-                    `NOTE: no searchable text, so it will not appear in search_memories. It DOES ` +
-                    `appear in list_memories_filtered by project/tag. Read the content with ` +
+                    (buscable
+                        ? `Searchable: yes. The search vector was computed on this machine, so the server ` +
+                          `can find this memory without ever reading it.\n`
+                        : `Searchable: NO — this memory will not appear in search_memories, now or later: ` +
+                          `nothing adds the vector afterwards. ${cmEmbed.motivoNoDisponible() || ""}\n`) +
+                    `It also appears in list_memories_filtered by project/tag. Read the content with ` +
                     `chainmemory_open_sealed(${d.memory_number}).`
                 );
             }
@@ -739,19 +758,56 @@ async function dispatchTool(request) {
         if (name === "search_memories") {
             const q = typeof args.q === "string" ? args.q.trim() : "";
             if (!q) return err("q is required: a natural-language query to search for");
-            const params = new URLSearchParams();
-            params.set("q", q);
-            params.set("limit", String(boundedInt(args.limit, { def: 10, min: 1, max: 20 })));
-            const data = await apiGet(`/v1/memories/search?${params}`);
+            const limite = boundedInt(args.limit, { def: 10, min: 1, max: 20 });
+            // Con boveda, la consulta NO sale de esta maquina: viaja su vector en el
+            // cuerpo de un POST. Por el camino de siempre el texto va en la URL y el
+            // servidor lo guarda en su registro de busquedas. Sin boveda se usa el de
+            // siempre (decision del dueno: solo cambia para quien usa la boveda).
+            let data = null, privada = false;
+            if (SEED_PHRASE) {
+                const embB = await cmEmbed.crearEmbedder();
+                if (embB) {
+                    try {
+                        const qv = await embB.embed(q);
+                        data = await apiPost("/v1/memories/search", { query_embedding: qv, limit: limite }, { timeoutMs: 30000 });
+                        privada = true;
+                    } catch (e) { data = null; }
+                }
+            }
+            if (!data) {
+                const params = new URLSearchParams();
+                params.set("q", q);
+                params.set("limit", String(limite));
+                data = await apiGet(`/v1/memories/search?${params}`);
+            }
             const mems = data.memories || [];
             if (!mems.length) return ok(`No matches for: "${q}"`);
-            const lines = mems.map(m => {
+            // Una memoria sellada vuelve sin texto (el servidor no lo tiene) y con su
+            // blob. Con la frase, se abre aca; sin ella se dice que esta sellada, en vez
+            // de mostrar un resultado vacio.
+            const lines = [];
+            for (const m of mems) {
                 const dt = m.timestamp ? new Date(m.timestamp * 1000).toISOString().split("T")[0] : "?";
                 const score = (m._score !== null && m._score !== undefined) ? ` score ${m._score}` : "";
                 const chain = m.chain_memory_id ? " · anchored" : " · anchoring pending";
                 const trust = (m.trust && m.trust !== "trusted") ? ` · trust:${m.trust}` : "";
-                return `[${dt} · ${m.category}${score}${chain}${trust}]\n${m.summary}`;
-            });
+                let texto = m.summary;
+                let sello = "";
+                if (m.scheme === "sealed" || (m.blob_b64 && !texto)) {
+                    sello = " · sealed";
+                    if (!SEED_PHRASE) {
+                        texto = "[sealed — set CHAINMEMORY_SEED_PHRASE in this MCP to read it here]";
+                    } else {
+                        try {
+                            const c = await blindClient();
+                            texto = await c.open(m.blob_b64);
+                        } catch (e) {
+                            texto = `[sealed — could not be opened here: ${e.message}]`;
+                        }
+                    }
+                }
+                lines.push(`[${dt} · ${m.category}${score}${chain}${trust}${sello}]\n${texto}`);
+            }
             // Aviso de degradacion: si el servicio de embeddings no responde, el server
             // devuelve las mas recientes en vez de las mas parecidas. Callarlo seria
             // presentar un orden cronologico como si fuera relevancia semantica.
@@ -760,9 +816,16 @@ async function dispatchTool(request) {
                 : "";
             // Los ids que devuelve este endpoint son internos y NO son el #N del usuario:
             // no sirven para inject/archive/get_memory. No se muestran para no inducir error.
+            // Se dice por donde fue la consulta: cambia quien vio el texto de lo que
+            // buscaste, y eso no se deja a la imaginacion de quien lee.
+            const privacidad = privada
+                ? `\n\nThe query never left this machine: only its vector was sent, and the server did not store the text.`
+                : (SEED_PHRASE
+                    ? `\n\nThe query text was sent to the server (the local search model was not available: ${cmEmbed.motivoNoDisponible() || "unknown reason"}).`
+                    : "");
             return ok(
                 `${mems.length} result(s) for "${q}":\n\n` + lines.join("\n\n---\n\n") +
-                degraded +
+                degraded + privacidad +
                 `\n\nNote: this endpoint does not return the user-facing memory number (#N), so these results cannot be fed directly to inject_memories, get_memory or archive_memory. Locate the memory with chainmemory_recall or list_memories_filtered to get its #N.`
             );
         }
@@ -1419,6 +1482,14 @@ function buildServer({ tools = TOOLS } = {}) {
 }
 
 async function main() {
+    // Con boveda, el modelo de busqueda se prepara en segundo plano al arrancar:
+    // la primera vez son 45 MB, y asi no se espera en el primer guardado.
+    if (SEED_PHRASE) {
+        cmEmbed.crearEmbedder().then((e) => {
+            console.error(e ? "[chainmemory-mcp] search model ready (own engine, hash checked)"
+                            : "[chainmemory-mcp] search model not available: " + cmEmbed.motivoNoDisponible());
+        });
+    }
     const transport = new StdioServerTransport();
     await buildServer().connect(transport);
     console.error("[chainmemory-mcp v" + require("./package.json").version + "] ready (API base: " + API_BASE + ")");
