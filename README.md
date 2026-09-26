@@ -255,7 +255,8 @@ Restart Claude Desktop. The 36 tools are now available.
 |---|---|---|
 | `CHAINMEMORY_API_KEY` | **Yes** | Your API key from the faucet |
 | `CHAINMEMORY_API_BASE` | No | Default `https://api.chainmemory.ai` |
-| `CHAINMEMORY_SEED_PHRASE` | No | 12 words for the blind vault. Without it `sealed: true` is unavailable and everything else works normally |
+| `CHAINMEMORY_SEED_PHRASE` | No | 12 words for the blind vault. Without it `sealed: true` is unavailable and everything else works normally. With it, sealed memories are searchable and searches send the query's vector instead of its text |
+| `CHAINMEMORY_MODELS_DIR` | No | Folder for the 45 MB search model used with the vault. Default `~/.chainmemory/models` |
 | `AICHAIN_KEY` | No | Wallet private key — only required by `chainmemory_seal` |
 | `AICHAIN_RPC` | No | Default `https://rpc.chainmemory.ai` — only for `chainmemory_seal` |
 
@@ -276,18 +277,25 @@ For most users only `CHAINMEMORY_API_KEY` is needed.
 2. Put them in `CHAINMEMORY_SEED_PHRASE` and restart the MCP.
 3. On `sealed: true`, the phrase is stretched into a seed with PBKDF2-HMAC-SHA512,
    the content key is derived with HKDF-SHA256, and the text is sealed with
-   AES-256-GCM into a versioned envelope. Only the blob and a SHA-256 hash are
-   sent to `POST /v1/memory/sealed`.
-4. `chainmemory_open_sealed` retrieves the blob and decrypts it locally.
+   AES-256-GCM into a versioned envelope. The blob, a SHA-256 hash and the
+   memory's search vector are sent to `POST /v1/memory/sealed`; the text is not.
+4. The search vector (384 numbers) is computed on your machine by ChainMemory's
+   own engine, from a model downloaded once from `models.chainmemory.ai` and
+   checked against its SHA-256 anchored on-chain. It lets the server find the
+   memory without reading it.
+5. `search_memories` sends the query's vector, not its text, and decrypts
+   sealed matches locally. `chainmemory_open_sealed` retrieves one blob and
+   decrypts it locally.
 
 No key material is transmitted at any point, and no recovery path exists — a
 recovery path is exactly what an operator would need in order to read your
 memories.
 
-**What it does not cover:** metadata stays visible (timestamps, sizes, project),
-memories written before sealing cannot be sealed retroactively, and the on-chain
-anchor is still signed by the server. The operator is trusted to anchor, never
-to read.
+**What it does not cover:** metadata stays visible (timestamps, sizes, project,
+tags), and so does the search vector, which cannot be turned back into the text
+but does reflect what it is about. Memories written before sealing cannot be
+sealed retroactively, and the on-chain anchor is still signed by the server. The
+operator is trusted to anchor, never to read.
 
 **Verify the claim yourself:** seal a memory, then call
 `GET /v1/memory/<id>/decrypted` with your API key. It returns `200` with
@@ -324,6 +332,12 @@ with a sealed memory it has nothing to decrypt.
 │  - Project State anchoring (public verification)            │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+## Trademark
+
+CHAINMEMORY is a registered trademark in Argentina (INPI, class 42,
+resolution 3932170), held by the project's founder. The MIT license covers
+the code, not the ChainMemory name or logo.
 
 ## License
 

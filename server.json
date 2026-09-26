@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.chaelynet/chainmemory",
   "title": "ChainMemory",
-  "description": "Persistent cross-model memory for AI agents: verifiable, portable, client-side encrypted.",
+  "description": "Verifiable, portable AI memory. Optional vault: encrypted on your machine, 12 words only you hold.",
   "websiteUrl": "https://chainmemory.ai",
   "icons": [
     {
@@ -35,7 +35,7 @@
           "name": "CHAINMEMORY_API_KEY"
         },
         {
-          "description": "12-word BIP-39 phrase for the blind vault. Optional: without it the server works exactly as before, but sealed:true is unavailable. Generate one with chainmemory_new_seed. It never leaves your machine and cannot be recovered.",
+          "description": "12-word BIP-39 phrase for the blind vault. Optional: without it the server works exactly as before. With it, sealed:true encrypts a memory on your machine and computes its search vector here, so sealed memories can still be found, and searches send the query's vector instead of its text. Generate one with chainmemory_new_seed. It never leaves your machine and cannot be recovered.",
           "isRequired": false,
           "format": "string",
           "isSecret": true,
@@ -47,6 +47,13 @@
           "format": "string",
           "isSecret": false,
           "name": "CHAINMEMORY_API_BASE"
+        },
+        {
+          "description": "Folder for the 45 MB search model used with the blind vault (default: ~/.chainmemory/models). Downloaded once from models.chainmemory.ai and checked against its SHA-256 anchored on ChainMemory's chain.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "CHAINMEMORY_MODELS_DIR"
         },
         {
           "description": "NOT NEEDED for normal use — leave it empty. Only the chainmemory_seal tool reads it, to sign a contract call yourself instead of letting the API anchor the memory (which chainmemory_remember already does). If you do set it, it is a wallet private key: use a dedicated wallet holding only a few AIC, never your main one. No other tool uses it.",
