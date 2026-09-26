@@ -92,7 +92,9 @@ it will not appear in `search_memories` — the server has nothing to index. Its
 project and tags *are* stored, so `list_memories_filtered` still finds it by
 project; you then read the content with `chainmemory_open_sealed`. Losing full
 text search is the direct consequence of the server being unable to read it, and
-there is no way around that which keeps the guarantee.
+there is no way around that which keeps the guarantee. *(Solved in v2.8.0:
+the search vector is now computed on your machine, so sealed memories are
+searchable without the server reading them.)*
 
 **If you lose the twelve words, the memories sealed with them are gone** — for
 you and for everyone. Write them on paper.
