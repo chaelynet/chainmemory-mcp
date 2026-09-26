@@ -8,6 +8,25 @@
 
 ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted (AES-256-GCM), anchored on-chain one by one so anyone can verify them, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
 
+## What's new in v2.8.0
+
+- **Sealed memories are searchable.** With the blind vault configured
+  (`CHAINMEMORY_SEED_PHRASE`), `chainmemory_remember` with `sealed:true` now
+  sends the memory's search vector along with the encrypted blob, computed on
+  your machine. The server can find a memory it cannot read, and
+  `search_memories` decrypts sealed matches locally.
+- **Your queries stay on your machine.** With the vault configured,
+  `search_memories` sends the query's vector, not its text, so the text of
+  what you search is never sent to the server nor written to its search log.
+- **No new dependencies.** The vector comes from ChainMemory's own engine
+  (tokenizer, model reader and WebAssembly kernel written by ChainMemory),
+  shipped in the package: 80 kB in total. The first time it is needed, the
+  45 MB search model is downloaded from `models.chainmemory.ai`, checked
+  against its SHA-256 anchored on ChainMemory's chain, and stored in
+  `~/.chainmemory/models` (or `CHAINMEMORY_MODELS_DIR`); it is checked again
+  every time it is loaded.
+- Without the vault nothing changes and nothing is downloaded.
+
 ## What's new in v2.7.1
 
 - **Correct version in the MCP handshake.** The server announced itself as
