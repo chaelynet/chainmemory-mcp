@@ -41,7 +41,11 @@ const HASHES_MODELO = Object.freeze({
     "onnx/model_fp16.onnx": "2cdb5e58291813b6d6e248ed69010100246821a367fa17b1b81ae9483744533d",
 });
 
-const TIMEOUT_DESCARGA_MS = 120000;
+// La descarga se corta solo si se queda QUIETA este tiempo (sin recibir ningun
+// dato), no por su duracion total. Con un limite total de 2 minutos, una conexion
+// lenta pero viva cortaba el modelo a medias (medido el 28/9: 46-930 KB/s hacia
+// el servidor en Finlandia) y la primera memoria sellada quedaba sin vector.
+const SIN_DATOS_MS = 60000;
 
 function carpetaModelo() {
     const base = process.env.CHAINMEMORY_MODELS_DIR || path.join(os.homedir(), ".chainmemory", "models");
@@ -61,17 +65,7 @@ async function archivoVerificado(nombre) {
         if (sha256(local) === esperado) return local;
     } catch (_) { /* no esta: se baja */ }
 
-    const url = MODELOS_BASE + RUTA_MODELO + nombre;
-    const control = new AbortController();
-    const reloj = setTimeout(() => control.abort(), TIMEOUT_DESCARGA_MS);
-    let datos;
-    try {
-        const r = await fetch(url, { signal: control.signal });
-        if (!r.ok) throw new Error(`HTTP ${r.status} al bajar ${nombre}`);
-        datos = Buffer.from(await r.arrayBuffer());
-    } finally {
-        clearTimeout(reloj);
-    }
+    const datos = await bajar(MODELOS_BASE + RUTA_MODELO + nombre);
     const obtenido = sha256(datos);
     if (obtenido !== esperado) {
         throw new Error(`${nombre} no coincide con el hash anclado en la cadena (llego ${obtenido.slice(0, 16)}…); no se usa`);
@@ -81,6 +75,37 @@ async function archivoVerificado(nombre) {
     fs.writeFileSync(temporal, datos);
     fs.renameSync(temporal, destino);
     return datos;
+}
+
+// Baja una URL entera. Se corta solo si pasan `sinDatosMs` sin recibir ningun
+// dato (tambien mientras espera la conexion y la primera respuesta).
+async function bajar(url, { sinDatosMs = SIN_DATOS_MS } = {}) {
+    const control = new AbortController();
+    let quieto = false;
+    let reloj = null;
+    const vigilar = () => {
+        clearTimeout(reloj);
+        reloj = setTimeout(() => { quieto = true; control.abort(); }, sinDatosMs);
+    };
+    vigilar();
+    try {
+        const r = await fetch(url, { signal: control.signal });
+        if (!r.ok) throw new Error(`HTTP ${r.status} al bajar ${url}`);
+        const partes = [];
+        const lector = r.body.getReader();
+        for (;;) {
+            vigilar();
+            const { done, value } = await lector.read();
+            if (done) break;
+            partes.push(Buffer.from(value));
+        }
+        return Buffer.concat(partes);
+    } catch (e) {
+        if (quieto) throw new Error(`la descarga de ${url} se quedo ${Math.round(sinDatosMs / 1000)} s sin recibir datos`);
+        throw e;
+    } finally {
+        clearTimeout(reloj);
+    }
 }
 
 let _embedder = null;          // promesa: se crea una sola vez por proceso
@@ -114,4 +139,4 @@ function crearEmbedder() {
 
 function motivoNoDisponible() { return _motivo; }
 
-module.exports = { crearEmbedder, motivoNoDisponible, carpetaModelo, HASHES_MODELO, SHA256SUMS_ANCLADO, MODELOS_BASE, RUTA_MODELO };
+module.exports = { crearEmbedder, motivoNoDisponible, carpetaModelo, bajar, SIN_DATOS_MS, HASHES_MODELO, SHA256SUMS_ANCLADO, MODELOS_BASE, RUTA_MODELO };

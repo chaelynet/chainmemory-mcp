@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// ChainMemory MCP Server v2.8.0
+// ChainMemory MCP Server v2.8.1
 // ============================================================
 // All tools route through the ChainMemory REST API
 // (https://api.chainmemory.ai by default). This means:
