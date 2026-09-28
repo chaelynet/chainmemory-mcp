@@ -1,0 +1,9 @@
+# Fin de linea LF siempre, tambien en la copia de trabajo de Windows: asi los
+# paquetes (zip de la extension, npm del MCP) salen iguales al repositorio.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.wasm binary
+*.onnx binary
+*.zip binary
