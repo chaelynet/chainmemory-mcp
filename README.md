@@ -8,6 +8,30 @@
 
 ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted (AES-256-GCM), anchored on-chain one by one so anyone can verify them, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
 
+## What's new in v2.9.0
+
+- **`get_project_brief`: the Project Brain in a few thousand characters,
+  most important first.** `get_project_state` returns the whole state as JSON,
+  which on a mature project is long, and an agent opening a session reads it
+  from the top. The brief is plain text built by the server
+  (`GET /v1/project/:name/inject`) by relevance and within a character budget
+  (default 7,000, from 1,000 to 50,000): what changed since the last version
+  you read, open risks (high first), active priorities, recent decisions with
+  their scope, recent milestones, open questions, each constraint as a one-line
+  rule, and the items that have not been reviewed for more than 30 versions
+  and may no longer be true. It starts with the state's on-chain anchor.
+  Free and read-only.
+- **"What changed" is measured from what you last read.** This local server
+  remembers, per project, the last version it gave you, in
+  `~/.chainmemory/brief-since.json`. The file is indexed by a hash of your API
+  key and the project name: it contains neither. Pass `since` to compare
+  against a specific version. On the remote endpoint nothing is stored, and
+  the comparison is with the previous version.
+- Headings in English or Spanish (`lang: "es"`); the items are returned as
+  they were written.
+- `get_project_state` is unchanged, and is still the tool to use before
+  `update_project_state`.
+
 ## What's new in v2.8.1
 
 - **The search model downloads on slow connections.** The first download
@@ -175,17 +199,18 @@ Edit your Claude Desktop config (`~/Library/Application Support/Claude/claude_de
 }
 ```
 
-Restart Claude Desktop. The 36 tools are now available.
+Restart Claude Desktop. The 37 tools are now available.
 
 ### 3. Try it
 
 - *"What do you remember about my projects?"* → `chainmemory_recall`
 - *"Save this decision: switching to Postgres for the next sprint"* → `chainmemory_remember`
+- *"Where are we on my-app?"* → `get_project_brief` (what changed, open risks, priorities, decisions)
 - *"Load the project state for my-app"* → `get_project_state` (Brain + active role contracts)
 - *"Which roles exist for my-app?"* → `list_role_contracts`
 - *"Assume the architect role for my-app"* → `assume_role` (audited Role Session)
 
-## All 36 tools
+## All 37 tools
 
 ### Memory ops (8)
 | Tool | Description |
@@ -213,10 +238,11 @@ Restart Claude Desktop. The 36 tools are now available.
 | `audit_memory` | Forensic audit of one memory: recomputes its `event_hash` from the stored plaintext and compares it against the anchored one. **0.1 AIC**, or free with `dry_run: true` |
 | `audit_state` | Full audit of a Project Brain: recomputes the `state_hash` with the deterministic engine, returns the on-chain anchor and the version history. **5 AIC**, or free with `dry_run: true` |
 
-### Project Brain (2)
+### Project Brain (3)
 | Tool | Description |
 |---|---|
 | `get_project_state` | Consolidated, verifiable project state + active role contracts (state_hash, anchored on-chain). Pass `include_roles: false` to omit the contract bodies |
+| `get_project_brief` | The same state as a text brief by relevance and within a character budget: what changed since the version you last read, open risks, priorities, recent decisions, constraints, items to review. Free |
 | `update_project_state` | Propose structured ops (29-op grammar, incl. environment); server validates, builds, hashes, persists |
 
 ### Verifiable Role Contracts (6)

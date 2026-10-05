@@ -65,6 +65,7 @@ const HERRAMIENTAS_REMOTAS = [
     "list_memories_filtered",
     "get_memory",
     "get_project_state",
+    "get_project_brief",
     "list_projects",
     "chainmemory_stats"
 ];
@@ -87,6 +88,15 @@ function adaptarParaRemoto(t) {
     if (t.name === "search_memories") {
         const copia = JSON.parse(JSON.stringify(t));
         copia.description = copia.description.replace(/ With the blind vault configured[^]*?\.(?=["\s]|$)/, "");
+        return copia;
+    }
+    // get_project_brief: el remoto no guarda que version leyo cada uno; sin since
+    // compara con la version anterior, y la descripcion tiene que decir eso.
+    if (t.name === "get_project_brief") {
+        const copia = JSON.parse(JSON.stringify(t));
+        copia.description = copia.description.replace(/ This local server remembers[^]*$/,
+            " On this remote endpoint nothing is remembered between calls: WHAT CHANGED compares with the previous version unless you pass since.");
+        copia.inputSchema.properties.since.description = "Version to compare against for the WHAT CHANGED section. Default: the previous version.";
         return copia;
     }
     if (t.name !== "chainmemory_remember") return t;

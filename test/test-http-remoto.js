@@ -176,7 +176,7 @@ function arrancarServidor(apiBase, puerto) {
         // ── 4. la bóveda no existe ──────────────────────────────────────────
         const listado = await pedir(url, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }, { clave: "k" });
         const nombres = ((listado.json && listado.json.result && listado.json.result.tools) || []).map(t => t.name);
-        check(nombres.length === 8, `el endpoint publica ${nombres.length} herramientas, esperaba 8`);
+        check(nombres.length === 9, `el endpoint publica ${nombres.length} herramientas, esperaba 9`);
         for (const v of ["chainmemory_seal", "chainmemory_open_sealed", "chainmemory_new_seed"]) {
             check(!nombres.includes(v), `${v} aparece publicada en el endpoint remoto`);
             const r = await llamar("k", v);
@@ -188,6 +188,9 @@ function arrancarServidor(apiBase, puerto) {
             "chainmemory_remember sigue declarando el parámetro sealed en el remoto");
         check(remember && !/Pass sealed:true/.test(remember.description),
             "la descripción de chainmemory_remember sigue ofreciendo sealed:true en el remoto");
+        const brief = ((listado.json.result.tools) || []).find(t => t.name === "get_project_brief");
+        check(brief && !/remembers/.test(brief.description) && /nothing is remembered/.test(brief.description),
+            "get_project_brief promete en el remoto recordar la version leida, y el remoto no guarda nada");
         console.log(`bóveda       : ${nombres.length} herramientas publicadas, las 3 de la bóveda ni listadas ni invocables`);
 
         // ── 5. sealed:true no escribe nada ──────────────────────────────────

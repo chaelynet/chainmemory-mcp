@@ -90,8 +90,8 @@ ${errores.trim() || "(sin stderr)"}`));
     else {
         const nombres = lista.result.tools.map(t => t.name);
         console.log(`tools/list   : ${nombres.length} herramientas`);
-        if (nombres.length !== 36) fallos.push(`tools/list devolvió ${nombres.length} herramientas, esperaba 36`);
-        for (const n of ["chainmemory_remember", "chainmemory_seal", "chainmemory_open_sealed", "chainmemory_new_seed", "get_project_state"]) {
+        if (nombres.length !== 37) fallos.push(`tools/list devolvió ${nombres.length} herramientas, esperaba 37`);
+        for (const n of ["chainmemory_remember", "chainmemory_seal", "chainmemory_open_sealed", "chainmemory_new_seed", "get_project_state", "get_project_brief"]) {
             if (!nombres.includes(n)) fallos.push(`falta la herramienta ${n} en stdio`);
         }
     }

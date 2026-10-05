@@ -47,6 +47,7 @@
 //
 //   Project Brain (estado consolidado verificable):
 //     - get_project_state              — leer el estado consolidado (+ contratos de rol activos)
+//     - get_project_brief              — el estado como texto por relevancia y presupuesto (v2.9.0)
 //     - update_project_state           — proponer ops de la gramatica de 29 ops
 //
 //   VRC — Verifiable Role Contracts (los 6 endpoints del modulo, completos):
@@ -223,6 +224,47 @@ function boundedInt(value, { def, min, max }) {
     const n = Number(value);
     if (!Number.isFinite(n)) return def;
     return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+// ------------------------------------------------------------
+// Ultima version del Brain que se entrego (get_project_brief, v2.9.0)
+// ------------------------------------------------------------
+// Solo en stdio, solo en esta maquina: ~/.chainmemory/brief-since.json. La entrada
+// se indexa por un hash de clave + proyecto, nunca por la clave, para que el archivo
+// no la contenga. Es una comodidad: si no se puede leer o escribir, el brief sale
+// igual, comparado con la version anterior.
+const fs = require("node:fs");
+const os = require("node:os");
+const nodePath = require("node:path");
+const nodeCrypto = require("node:crypto");
+
+function archivoVersiones() {
+    return nodePath.join(os.homedir(), ".chainmemory", "brief-since.json");
+}
+function entradaVersion(proyecto) {
+    return nodeCrypto.createHash("sha256").update(`${currentApiKey()}\n${proyecto}`).digest("hex").slice(0, 32);
+}
+function leerVersionesLeidas() {
+    try {
+        const d = JSON.parse(fs.readFileSync(archivoVersiones(), "utf8"));
+        return d && typeof d === "object" && !Array.isArray(d) ? d : {};
+    } catch { return {}; }
+}
+function leerVersionLeida(proyecto) {
+    const v = leerVersionesLeidas()[entradaVersion(proyecto)];
+    return Number.isInteger(v) && v > 0 ? v : null;
+}
+function guardarVersionLeida(proyecto, version) {
+    try {
+        const archivo = archivoVersiones();
+        const d = leerVersionesLeidas();
+        d[entradaVersion(proyecto)] = version;
+        fs.mkdirSync(nodePath.dirname(archivo), { recursive: true });
+        // Temporal + rename: dos procesos a la vez nunca dejan el archivo a medias.
+        const tmp = `${archivo}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(d), { mode: 0o600 });
+        fs.renameSync(tmp, archivo);
+    } catch { /* sin archivo, el proximo brief compara con la version anterior */ }
 }
 
 // ------------------------------------------------------------
@@ -523,6 +565,20 @@ const TOOLS = [
                 properties: {
                     name: { type: "string", description: "Project name, e.g. 'chainmemory'" },
                     include_roles: { type: "boolean", description: "Embed the FULL text of every active Verifiable Role Contract in the response (default true). Set to false when you only need the state: on projects with several signed VRCs the contracts can add thousands of characters and blow past the client's output limit." }
+                },
+                required: ["name"]
+            }
+        },
+        {
+            name: "get_project_brief",
+            description: "Get a project's Brain as a ready-to-read BRIEF: plain text ordered by relevance and cut to a character budget — what changed since the last version you read, open risks (high first), active priorities, recent decisions with their scope, recent milestones, open questions, each constraint as a one-line rule, and items that have not been reviewed for a long time, headed by the state's on-chain anchor. Free, read-only, owner-scoped. Use it at the START of a session to get oriented in a few thousand characters. Use get_project_state instead when you need the full structured JSON (ids, evidence, metrics, environment, role contracts), and always before update_project_state. This local server remembers, per project and only on this machine, the last version it gave you, so the next call shows what changed since then; pass since to compare against a specific version.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    name: { type: "string", description: "Project name, e.g. 'chainmemory'" },
+                    budget: { type: "integer", minimum: 1000, maximum: 50000, description: "Maximum characters of the brief (default 7000). The most relevant sections are kept whole; the rest is shortened to fit." },
+                    lang: { type: "string", enum: ["en", "es"], description: "Language of the section headings (default en). The items themselves are returned as they were written." },
+                    since: { type: "integer", minimum: 1, description: "Version to compare against for the WHAT CHANGED section. Default: the last version this server gave you for this project, or the previous version if there is none." }
                 },
                 required: ["name"]
             }
@@ -1094,6 +1150,34 @@ async function dispatchTool(request) {
                 data.vrc_unavailable = `No se pudieron obtener los contratos de rol: ${e.message || String(e)}. El state es valido; la capa VRC no pudo verificarse en esta llamada.`;
             }
             return ok(JSON.stringify(data, null, 2));
+        }
+        if (name === "get_project_brief") {
+            // [brief-20261005] La vista la arma el servidor (GET /inject), por relevancia
+            // y dentro del presupuesto. Aca solo se elige contra que version comparar.
+            const proyecto = pathStr(args.name, "name");
+            if (args.lang !== undefined && args.lang !== "en" && args.lang !== "es") {
+                throw new Error(`lang must be "en" or "es" (received: ${JSON.stringify(args.lang)})`);
+            }
+            // En el remoto no se guarda nada de nadie: sin since, compara con la anterior.
+            const local = !requestContext.getStore();
+            let since = null, recordada = false;
+            if (args.since !== undefined && args.since !== null) since = pathInt(args.since, "since");
+            else if (local) { since = leerVersionLeida(args.name); recordada = since !== null; }
+            const base = `/v1/project/${proyecto}/inject?budget=${boundedInt(args.budget, { def: 7000, min: 1000, max: 50000 })}` +
+                (args.lang ? `&lang=${args.lang}` : "");
+            let data;
+            try {
+                data = await apiGet(base + (since !== null ? `&since=${since}` : ""));
+            } catch (e) {
+                // La version recordada puede no servir (estado rehecho, otra cuenta en la
+                // misma maquina): se pide sin since en vez de fallar. Un since explicito no.
+                if (recordada && e.status === 400) data = await apiGet(base);
+                else if (e.status === 404 && e.data && e.data.error === "Not found") {
+                    throw new Error("this API does not serve project briefs yet; use get_project_state");
+                } else throw e;
+            }
+            if (local && Number.isInteger(data.version)) guardarVersionLeida(args.name, data.version);
+            return ok(data.text);
         }
         if (name === "update_project_state") {
             if (!Array.isArray(args.ops) || args.ops.length === 0) {

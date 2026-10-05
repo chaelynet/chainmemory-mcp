@@ -17,12 +17,12 @@
     "url": "https://github.com/chaelynet/chainmemory-mcp",
     "source": "github"
   },
-  "version": "2.8.1",
+  "version": "2.9.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "chainmemory-mcp",
-      "version": "2.8.1",
+      "version": "2.9.0",
       "transport": {
         "type": "stdio"
       },
