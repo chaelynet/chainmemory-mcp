@@ -1,7 +1,7 @@
 {
   "name": "chainmemory-mcp",
   "mcpName": "io.github.chaelynet/chainmemory",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "description": "Cross-model, cryptographically verifiable memory for Claude, ChatGPT, and any AI agent — own your AI's memory and carry it across every model. MCP server, 37 tools: remember, semantic search, on-chain verification proofs, forensic audit, selective inject, Project Brain (verifiable project state, and a brief of what changed and what matters), role contracts with audited sessions, and a blind vault that encrypts memories client-side with 12 words the server never sees.",
   "main": "server.js",
   "scripts": {

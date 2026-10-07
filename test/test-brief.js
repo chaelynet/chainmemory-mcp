@@ -30,6 +30,11 @@ const check = (cond, msg) => { if (!cond) fallos.push(msg); };
         if (modo === "sin-ruta") return responder(404, { error: "Not found", method: "GET", path: u.pathname });
         if (modo === "sin-estado") return responder(404, { error: "project state not found" });
         if (since !== null && (modo === "since-400" || Number(since) > version)) return responder(400, { error: `since must be a version between 1 and ${version}` });
+        const task = u.searchParams.get("task");
+        if (task !== null && modo !== "sin-tarea") {
+            if (task === "pri_9999") return responder(404, { error: `priority ${task} not found` });
+            return responder(200, { project: "x", version, state_hash: "0x", task, budget: Number(u.searchParams.get("budget")), lang: "en", text: `TAREA ${task} v${version}` });
+        }
         responder(200, {
             project: decodeURIComponent(u.pathname.split("/")[3]), version, state_hash: "0x" + "ab".repeat(32),
             since: since === null ? version - 1 : Number(since), budget: Number(u.searchParams.get("budget")),
@@ -123,6 +128,24 @@ const check = (cond, msg) => { if (!cond) fallos.push(msg); };
     check(r.error && /project state not found/.test(r.texto), `proyecto sin estado: ${r.texto}`);
     modo = "ok";
     console.log(`errores      : lang y name validados aca; sin ruta sugiere get_project_state`);
+
+    // 9b. modo tarea: pide task, nunca since, y no mueve la version recordada
+    const antesTarea = fs.readFileSync(archivo, "utf8");
+    r = await brief({ name: "mi proyecto", task: "pri_0015", lang: "es" });
+    check(!r.error && r.texto === "TAREA pri_0015 v97" && r.pedidos.length === 1 && r.pedidos[0] === "/v1/project/mi%20proyecto/inject?budget=7000&lang=es&task=pri_0015",
+        `tarea: ${r.texto} (${r.pedidos.join(" | ")})`);
+    check(fs.readFileSync(archivo, "utf8") === antesTarea, "el modo tarea movio la version recordada");
+    for (const malo of ["risk_0045", "pri_15", "pri_0015&budget=1", 15]) {
+        r = await brief({ name: "mi proyecto", task: malo });
+        check(r.error && /task must be a priority id/.test(r.texto) && r.pedidos.length === 0, `task=${JSON.stringify(malo)}: ${r.texto} (${r.pedidos.length} pedidos)`);
+    }
+    r = await brief({ name: "mi proyecto", task: "pri_9999" });
+    check(r.error && /priority pri_9999 not found/.test(r.texto), `tarea inexistente: ${r.texto}`);
+    modo = "sin-tarea";
+    r = await brief({ name: "mi proyecto", task: "pri_0015" });
+    check(r.error && /does not serve task briefs yet/.test(r.texto), `API que ignora task: ${r.texto}`);
+    modo = "ok";
+    console.log(`tarea        : pide task sin since, no mueve la version; valida el id; detecta una API vieja`);
 
     // 10. archivo roto: se ignora y se reescribe
     fs.writeFileSync(archivo, "{roto");

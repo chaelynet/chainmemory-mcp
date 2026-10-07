@@ -8,6 +8,30 @@
 
 ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted (AES-256-GCM), anchored on-chain one by one so anyone can verify them, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
 
+## What's new in v2.9.1
+
+- **`get_project_brief` has a task mode.** Pass `task: "pri_0015"` and the brief
+  is about that one priority: the priority in full, its completion criterion
+  on its own line, the risks it mitigates, everything else in the Brain that
+  mentions it, and every work rule and constraint. A general brief orients;
+  this one is meant to be enough to start the work. It does not move the
+  version remembered for "what changed".
+- **Briefs are safe to paste into any chat.** The server now replaces IP
+  addresses, ports, server paths and the owner's security rules with
+  `[withheld]`, and says how many were withheld in that text, so the agent
+  knows to ask. Before, a large budget could carry a server path or an SSH
+  port into a third-party chat.
+- **The brief says more about what it shows:** the full `state_hash`, each
+  changed priority-risk link with its previous value, completion criteria
+  never cut, titles in "to review", the owner's work rules, and how many items
+  cite evidence, with the rest marked `(no evidence)`.
+- **Priorities can be linked to risks.** `update_project_state` documents the
+  new `mitigates` field of `add_priority` and the `set_priority_risks` op (the
+  grammar is now 30 ops). The brief then shows which priority covers each risk
+  and lists the high risks nobody mitigates. The documented value sets were
+  also corrected: risks can be `mitigated`, and priorities are `active`,
+  `done` or `dropped`.
+
 ## What's new in v2.9.0
 
 - **`get_project_brief`: the Project Brain in a few thousand characters,
@@ -242,8 +266,8 @@ Restart Claude Desktop. The 37 tools are now available.
 | Tool | Description |
 |---|---|
 | `get_project_state` | Consolidated, verifiable project state + active role contracts (state_hash, anchored on-chain). Pass `include_roles: false` to omit the contract bodies |
-| `get_project_brief` | The same state as a text brief by relevance and within a character budget: what changed since the version you last read, open risks, priorities, recent decisions, constraints, items to review. Free |
-| `update_project_state` | Propose structured ops (29-op grammar, incl. environment); server validates, builds, hashes, persists |
+| `get_project_brief` | The same state as a text brief by relevance and within a character budget: what changed since the version you last read, open risks and the priorities that mitigate them, priorities, work rules, recent decisions, constraints, items to review. Pass `task` for everything needed to work on one priority. Infrastructure details are withheld. Free |
+| `update_project_state` | Propose structured ops (30-op grammar, incl. environment and priority-risk links); server validates, builds, hashes, persists |
 
 ### Verifiable Role Contracts (6)
 | Tool | Description |

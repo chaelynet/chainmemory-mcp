@@ -48,7 +48,7 @@
 //   Project Brain (estado consolidado verificable):
 //     - get_project_state              — leer el estado consolidado (+ contratos de rol activos)
 //     - get_project_brief              — el estado como texto por relevancia y presupuesto (v2.9.0)
-//     - update_project_state           — proponer ops de la gramatica de 29 ops
+//     - update_project_state           — proponer ops de la gramatica de 30 ops
 //
 //   VRC — Verifiable Role Contracts (los 6 endpoints del modulo, completos):
 //     - list_role_contracts            — listar los roles del proyecto (v2.5.4)
@@ -571,21 +571,22 @@ const TOOLS = [
         },
         {
             name: "get_project_brief",
-            description: "Get a project's Brain as a ready-to-read BRIEF: plain text ordered by relevance and cut to a character budget — what changed since the last version you read, open risks (high first), active priorities, recent decisions with their scope, recent milestones, open questions, each constraint as a one-line rule, and items that have not been reviewed for a long time, headed by the state's on-chain anchor. Free, read-only, owner-scoped. Use it at the START of a session to get oriented in a few thousand characters. Use get_project_state instead when you need the full structured JSON (ids, evidence, metrics, environment, role contracts), and always before update_project_state. This local server remembers, per project and only on this machine, the last version it gave you, so the next call shows what changed since then; pass since to compare against a specific version.",
+            description: "Get a project's Brain as a ready-to-read BRIEF: plain text ordered by relevance and cut to a character budget — what changed since the last version you read, open risks (high first, with the priorities that mitigate them and a list of high risks nobody mitigates), active priorities with their full completion criterion, the owner's work rules, recent decisions with their scope, recent milestones, open questions, each constraint as a one-line rule, and items that have not been edited for a long time, headed by the state's on-chain anchor and how much of it cites evidence. Free, read-only, owner-scoped. The text is safe to paste into any chat: addresses, ports, server paths and security rules are replaced by [withheld] and counted. Use it at the START of a session to get oriented in a few thousand characters. Pass task (a priority id such as pri_0015) to get instead everything needed to work on that one priority: the priority in full, its completion criterion, the risks it mitigates, what else in the Brain mentions it, and every work rule and constraint. Use get_project_state instead when you need the full structured JSON (ids, evidence, metrics, environment, role contracts), and always before update_project_state. This local server remembers, per project and only on this machine, the last version it gave you, so the next call shows what changed since then; pass since to compare against a specific version.",
             inputSchema: {
                 type: "object",
                 properties: {
                     name: { type: "string", description: "Project name, e.g. 'chainmemory'" },
                     budget: { type: "integer", minimum: 1000, maximum: 50000, description: "Maximum characters of the brief (default 7000). The most relevant sections are kept whole; the rest is shortened to fit." },
                     lang: { type: "string", enum: ["en", "es"], description: "Language of the section headings (default en). The items themselves are returned as they were written." },
-                    since: { type: "integer", minimum: 1, description: "Version to compare against for the WHAT CHANGED section. Default: the last version this server gave you for this project, or the previous version if there is none." }
+                    since: { type: "integer", minimum: 1, description: "Version to compare against for the WHAT CHANGED section. Default: the last version this server gave you for this project, or the previous version if there is none." },
+                    task: { type: "string", pattern: "^pri_[0-9]{4,}$", description: "A priority id (e.g. 'pri_0015'). Returns the brief for working on that priority instead of the general one; since is ignored and nothing is remembered." }
                 },
                 required: ["name"]
             }
         },
         {
             name: "update_project_state",
-            description: "Apply operations to a project's consolidated state (Project Brain). FEE: 0.05 AIC plus 0.005 per applied op. Ops come from the 29-op grammar (add_decision, add_milestone, add_risk, set_focus, add_env_host...); the server validates invariants, applies them with a deterministic builder and computes the new state_hash. Use after get_project_state + list_memories_filtered to see what actually changed. EVIDENCE IS WHAT MAKES THE STATE WORTH ANYTHING: cite the memories backing each op with evidence_memory_ids. An op with no evidence is stored with evidence_root 0x000...0 — state with no provenance, indistinguishable from your own opinion, and the chain seals it just the same because it verifies hashes, not correctness. If any cited memory cannot be resolved the WHOLE call is rejected with 422 and nothing is written or charged; the usual cause is citing a memory before it anchors. CLOSED VALUE SETS, a wrong one costs a rejected op: severity is low, med or high (NOT medium, NOT critical); risk status open or closed; milestone status planned, in_progress or done; decision status proposed, confirmed, rejected or superseded.",
+            description: "Apply operations to a project's consolidated state (Project Brain). FEE: 0.05 AIC plus 0.005 per applied op. Ops come from the 30-op grammar (add_decision, add_milestone, add_risk, set_focus, add_env_host...); the server validates invariants, applies them with a deterministic builder and computes the new state_hash. Use after get_project_state + list_memories_filtered to see what actually changed. EVIDENCE IS WHAT MAKES THE STATE WORTH ANYTHING: cite the memories backing each op with evidence_memory_ids. An op with no evidence is stored with evidence_root 0x000...0 — state with no provenance, indistinguishable from your own opinion, and the chain seals it just the same because it verifies hashes, not correctness. If any cited memory cannot be resolved the WHOLE call is rejected with 422 and nothing is written or charged; the usual cause is citing a memory before it anchors. CLOSED VALUE SETS, a wrong one costs a rejected op: severity is low, med or high (NOT medium, NOT critical); risk status open, mitigated or closed; milestone status planned, in_progress or done; decision status proposed, confirmed, rejected or superseded; priority status active, done or dropped. LINK PRIORITIES TO RISKS: add_priority accepts mitigates (an array of risk ids such as [\"risk_0044\"]), and set_priority_risks {id, mitigates} replaces the risks an active priority mitigates ([] removes the link); a risk that does not exist or is closed is rejected. get_project_brief then shows which priority covers each risk and lists the high risks nobody mitigates.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -595,13 +596,13 @@ const TOOLS = [
                     },
                     ops: {
                         type: "array",
-                        description: "Array of operations from the 29-op grammar. Each op has 'op' (type) + arguments. Use 'evidence_memory_ids' (array of memory IDs) instead of 'evidence' — the server resolves event_hashes automatically. The 7 add_env_*/set_env_status/verify_env/supersede_env ops maintain the `environment` section: where and how the owner works (hosts, services, repositories, operating rules). Store topology only — NEVER credentials, keys or passwords (the server rejects them).",
+                        description: "Array of operations from the 30-op grammar. Each op has 'op' (type) + arguments. Use 'evidence_memory_ids' (array of memory IDs) instead of 'evidence' — the server resolves event_hashes automatically. The 7 add_env_*/set_env_status/verify_env/supersede_env ops maintain the `environment` section: where and how the owner works (hosts, services, repositories, operating rules). Store topology only — NEVER credentials, keys or passwords (the server rejects them).",
                         items: {
                             type: "object",
                             properties: {
                                 op: {
                                     type: "string",
-                                    description: "Operation type: add_decision, set_decision_status, supersede_decision, add_milestone, set_milestone_status, add_risk, set_risk_status, add_assumption, invalidate_assumption, add_open_question, answer_open_question, add_priority, set_priority_status, reorder_priority, set_focus, set_phase, set_vision, add_vocabulary, update_vocabulary, add_constraint, remove_constraint, set_metric, add_env_host, add_env_service, add_env_repo, add_env_rule, set_env_status, verify_env, supersede_env"
+                                    description: "Operation type: add_decision, set_decision_status, supersede_decision, add_milestone, set_milestone_status, add_risk, set_risk_status, add_assumption, invalidate_assumption, add_open_question, answer_open_question, add_priority, set_priority_status, reorder_priority, set_priority_risks, set_focus, set_phase, set_vision, add_vocabulary, update_vocabulary, add_constraint, remove_constraint, set_metric, add_env_host, add_env_service, add_env_repo, add_env_rule, set_env_status, verify_env, supersede_env"
                                 },
                                 evidence_memory_ids: {
                                     type: "array",
@@ -1165,6 +1166,18 @@ async function dispatchTool(request) {
             else if (local) { since = leerVersionLeida(args.name); recordada = since !== null; }
             const base = `/v1/project/${proyecto}/inject?budget=${boundedInt(args.budget, { def: 7000, min: 1000, max: 50000 })}` +
                 (args.lang ? `&lang=${args.lang}` : "");
+            // [brief-tarea-20261007] Modo tarea: lo necesario para trabajar en una prioridad.
+            // No compara versiones ni mueve la version recordada: no es una lectura del
+            // estado completo, y la proxima vista general tiene que seguir mostrando que cambio.
+            if (args.task !== undefined && args.task !== null) {
+                if (typeof args.task !== "string" || !/^pri_[0-9]{4,}$/.test(args.task)) {
+                    throw new Error(`task must be a priority id like "pri_0015" (received: ${JSON.stringify(args.task)})`);
+                }
+                const t = await apiGet(`${base}&task=${args.task}`);
+                // una API anterior ignora task y devuelve la vista general: no hacerla pasar por la de la tarea
+                if (t.task !== args.task) throw new Error("this API does not serve task briefs yet; use get_project_state");
+                return ok(t.text);
+            }
             let data;
             try {
                 data = await apiGet(base + (since !== null ? `&since=${since}` : ""));
