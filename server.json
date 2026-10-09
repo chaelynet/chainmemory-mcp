@@ -17,12 +17,12 @@
     "url": "https://github.com/chaelynet/chainmemory-mcp",
     "source": "github"
   },
-  "version": "2.9.1",
+  "version": "2.10.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "chainmemory-mcp",
-      "version": "2.9.1",
+      "version": "2.10.0",
       "transport": {
         "type": "stdio"
       },
@@ -54,6 +54,13 @@
           "format": "string",
           "isSecret": false,
           "name": "CHAINMEMORY_MODELS_DIR"
+        },
+        {
+          "description": "Set to 1 to let get_project_brief return the FULL level (addresses, ports, server paths and security rules) when you ask for it. Leave it empty to keep every brief at the public level, which is safe to paste anywhere. Works only with the owner's key, and ChainMemory logs every full-level request.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "CHAINMEMORY_ALLOW_FULL"
         },
         {
           "description": "NOT NEEDED for normal use — leave it empty. Only the chainmemory_seal tool reads it, to sign a contract call yourself instead of letting the API anchor the memory (which chainmemory_remember already does). If you do set it, it is a wallet private key: use a dedicated wallet holding only a few AIC, never your main one. No other tool uses it.",

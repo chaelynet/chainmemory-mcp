@@ -8,6 +8,33 @@
 
 ChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted (AES-256-GCM), anchored on-chain one by one so anyone can verify them, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.
 
+## What's new in v2.10.0
+
+- **Full level for `get_project_brief`, only when you allow it.** The brief is
+  public by default: safe to paste into any chat, with addresses, ports,
+  server paths and security rules replaced by `[withheld]`. Pass
+  `level: "full"` to get them too, for work on your own infrastructure. It
+  works only if you add `CHAINMEMORY_ALLOW_FULL=1` to this MCP server's `env`,
+  only with the owner's key (member and project keys are refused by the API),
+  and ChainMemory logs every full-level request: when, which project and
+  version, from which client and how many sensitive lines went out. The brief
+  says so at the top and counts the sensitive lines at the end.
+- **The remote endpoint never offers the full level.** It serves third-party
+  clients, so the parameter is not even published there.
+- How a project's AIC are safeguarded never appears in a brief, at any level.
+- Every request now tells the API which client made it
+  (`chainmemory-mcp <version> stdio|remote`), which is what the full-level
+  log records.
+
+To enable it, add the variable next to your API key:
+
+```json
+"env": {
+  "CHAINMEMORY_API_KEY": "aic_your_key_here",
+  "CHAINMEMORY_ALLOW_FULL": "1"
+}
+```
+
 ## What's new in v2.9.1
 
 - **`get_project_brief` has a task mode.** Pass `task: "pri_0015"` and the brief

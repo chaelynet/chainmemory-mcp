@@ -191,6 +191,8 @@ function arrancarServidor(apiBase, puerto) {
         const brief = ((listado.json.result.tools) || []).find(t => t.name === "get_project_brief");
         check(brief && !/remembers/.test(brief.description) && /nothing is remembered/.test(brief.description),
             "get_project_brief promete en el remoto recordar la version leida, y el remoto no guarda nada");
+        check(brief && !("level" in brief.inputSchema.properties) && !/FULL LEVEL|level "full"/.test(brief.description),
+            "get_project_brief ofrece el nivel completo en el remoto, que atiende clientes de terceros");
         console.log(`bóveda       : ${nombres.length} herramientas publicadas, las 3 de la bóveda ni listadas ni invocables`);
 
         // ── 5. sealed:true no escribe nada ──────────────────────────────────

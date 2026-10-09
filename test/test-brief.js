@@ -23,10 +23,15 @@ const check = (cond, msg) => { if (!cond) fallos.push(msg); };
     let version = 96;
     const pedidos = [];
     const stub = http.createServer((req, res) => {
-        pedidos.push({ url: req.url, clave: req.headers["x-api-key"] });
+        pedidos.push({ url: req.url, clave: req.headers["x-api-key"], cliente: req.headers["x-cm-client"] });
         const u = new URL(req.url, "http://x");
         const since = u.searchParams.get("since");
-        const responder = (code, body) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+        const completo = u.searchParams.get("level") === "full" && modo !== "sin-full";
+        const responderBase = (code, body) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+        // nivel completo: la API real agrega level y sensitive_lines; una API vieja los ignora
+        const responder = (code, body) => responderBase(code, code === 200 && completo
+            ? { ...body, level: "full", sensitive_lines: ["linea sensible 1", "linea sensible 2"], text: "COMPLETO " + body.text }
+            : code === 200 ? { ...body, level: "public" } : body);
         if (modo === "sin-ruta") return responder(404, { error: "Not found", method: "GET", path: u.pathname });
         if (modo === "sin-estado") return responder(404, { error: "project state not found" });
         if (since !== null && (modo === "since-400" || Number(since) > version)) return responder(400, { error: `since must be a version between 1 and ${version}` });
@@ -146,6 +151,40 @@ const check = (cond, msg) => { if (!cond) fallos.push(msg); };
     check(r.error && /does not serve task briefs yet/.test(r.texto), `API que ignora task: ${r.texto}`);
     modo = "ok";
     console.log(`tarea        : pide task sin since, no mueve la version; valida el id; detecta una API vieja`);
+
+    // 9c. nivel completo, sin habilitar en esta maquina: no se pide nada
+    r = await brief({ name: "mi proyecto", level: "full" });
+    check(r.error && /disabled on this machine/.test(r.texto) && /CHAINMEMORY_ALLOW_FULL=1/.test(r.texto) && r.pedidos.length === 0, `completo sin habilitar: ${r.texto.slice(0, 80)} (${r.pedidos.length} pedidos)`);
+    r = await brief({ name: "mi proyecto", level: "todo" });
+    check(r.error && /level must be/.test(r.texto) && r.pedidos.length === 0, `level invalido: ${r.texto}`);
+    r = await brief({ name: "mi proyecto", level: "public" });
+    check(!r.error && !/level=/.test(r.pedidos[0]) && !/full level/.test(r.texto), `level public explicito: como siempre (${r.pedidos[0]})`);
+    check(/^chainmemory-mcp \d+\.\d+\.\d+ stdio$/.test(pedidos[0].cliente || ""), `cada pedido dice que cliente es (${pedidos[0].cliente})`);
+
+    // 9d. habilitado: se recarga el modulo con CHAINMEMORY_ALLOW_FULL=1
+    process.env.CHAINMEMORY_ALLOW_FULL = "1";
+    const ruta = require.resolve(process.env.CM_MCP || path.resolve(process.cwd(), "server.js"));
+    delete require.cache[ruta];
+    const m2 = require(ruta);
+    const brief2 = async (args, ctx) => {
+        pedidos.length = 0;
+        const llamar = () => m2.dispatchTool({ params: { name: "get_project_brief", arguments: args } });
+        const res2 = ctx ? await m2.requestContext.run(ctx, llamar) : await llamar();
+        return { texto: res2.content[0].text, error: res2.isError === true, pedidos: pedidos.map(p => p.url) };
+    };
+    r = await brief2({ name: "mi proyecto", level: "full" });
+    check(!r.error && /&level=full/.test(r.pedidos[0]) && /^COMPLETO BRIEF/.test(r.texto) && /\(full level: 2 sensitive lines included; ChainMemory logged this request\)$/.test(r.texto),
+        `completo habilitado: pide level=full y avisa cuantas lineas sensibles salieron (${r.pedidos[0]})`);
+    r = await brief2({ name: "mi proyecto", level: "full", task: "pri_0015" });
+    check(!r.error && /&level=full&task=pri_0015$/.test(r.pedidos[0]) && /full level: 2 sensitive lines/.test(r.texto), `completo + tarea: ${r.pedidos[0]}`);
+    r = await brief2({ name: "mi proyecto", level: "full" }, { apiKey: "aic_remota" });
+    check(r.error && /not available on the remote endpoint/.test(r.texto) && r.pedidos.length === 0, `remoto: el nivel completo no existe aunque la maquina lo habilite (${r.pedidos.length} pedidos)`);
+    modo = "sin-full";
+    r = await brief2({ name: "mi proyecto", level: "full" });
+    check(r.error && /does not serve the full level yet/.test(r.texto), `API que ignora level: ${r.texto}`);
+    modo = "ok";
+    delete process.env.CHAINMEMORY_ALLOW_FULL;
+    console.log(`completo     : sin habilitar no pide nada; habilitado avisa y cuenta; el remoto nunca; detecta una API vieja`);
 
     // 10. archivo roto: se ignora y se reescribe
     fs.writeFileSync(archivo, "{roto");

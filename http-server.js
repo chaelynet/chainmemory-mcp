@@ -97,6 +97,9 @@ function adaptarParaRemoto(t) {
         copia.description = copia.description.replace(/ This local server remembers[^]*$/,
             " On this remote endpoint nothing is remembered between calls: WHAT CHANGED compares with the previous version unless you pass since.");
         copia.inputSchema.properties.since.description = "Version to compare against for the WHAT CHANGED section. Default: the previous version.";
+        // el nivel completo no existe aca (la regex de arriba ya saco su parrafo): este
+        // endpoint atiende clientes de terceros
+        delete copia.inputSchema.properties.level;
         return copia;
     }
     if (t.name !== "chainmemory_remember") return t;

@@ -100,6 +100,10 @@ const API_BASE = process.env.CHAINMEMORY_API_BASE || "https://api.chainmemory.ai
 const { AsyncLocalStorage } = require("node:async_hooks");
 const requestContext = new AsyncLocalStorage();
 const ENV_API_KEY = process.env.CHAINMEMORY_API_KEY || null;
+// [brief-full-20261009] El nivel completo del brief (direcciones, puertos, rutas) solo se
+// pide si el dueno lo habilito en esta maquina. Exactamente "1": nada de "true" ni "yes".
+const ALLOW_FULL = process.env.CHAINMEMORY_ALLOW_FULL === "1";
+const CLIENT_VERSION = require("./package.json").version;
 
 function currentApiKey() {
     const ctx = requestContext.getStore();
@@ -168,7 +172,9 @@ async function apiRequest(method, path, body = null, { timeoutMs = 15000 } = {})
             method,
             headers: {
                 "x-api-key": apiKey,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                // que cliente pidio: lo usa el registro del nivel completo (/inject/log)
+                "x-cm-client": `chainmemory-mcp ${CLIENT_VERSION} ${requestContext.getStore() ? "remote" : "stdio"}`
             },
             signal: controller.signal
         };
@@ -571,7 +577,7 @@ const TOOLS = [
         },
         {
             name: "get_project_brief",
-            description: "Get a project's Brain as a ready-to-read BRIEF: plain text ordered by relevance and cut to a character budget — what changed since the last version you read, open risks (high first, with the priorities that mitigate them and a list of high risks nobody mitigates), active priorities with their full completion criterion, the owner's work rules, recent decisions with their scope, recent milestones, open questions, each constraint as a one-line rule, and items that have not been edited for a long time, headed by the state's on-chain anchor and how much of it cites evidence. Free, read-only, owner-scoped. The text is safe to paste into any chat: addresses, ports, server paths and security rules are replaced by [withheld] and counted. Use it at the START of a session to get oriented in a few thousand characters. Pass task (a priority id such as pri_0015) to get instead everything needed to work on that one priority: the priority in full, its completion criterion, the risks it mitigates, what else in the Brain mentions it, and every work rule and constraint. Use get_project_state instead when you need the full structured JSON (ids, evidence, metrics, environment, role contracts), and always before update_project_state. This local server remembers, per project and only on this machine, the last version it gave you, so the next call shows what changed since then; pass since to compare against a specific version.",
+            description: "Get a project's Brain as a ready-to-read BRIEF: plain text ordered by relevance and cut to a character budget — what changed since the last version you read, open risks (high first, with the priorities that mitigate them and a list of high risks nobody mitigates), active priorities with their full completion criterion, the owner's work rules, recent decisions with their scope, recent milestones, open questions, each constraint as a one-line rule, and items that have not been edited for a long time, headed by the state's on-chain anchor and how much of it cites evidence. Free, read-only, owner-scoped. The text is safe to paste into any chat: addresses, ports, server paths and security rules are replaced by [withheld] and counted. Use it at the START of a session to get oriented in a few thousand characters. Pass task (a priority id such as pri_0015) to get instead everything needed to work on that one priority: the priority in full, its completion criterion, the risks it mitigates, what else in the Brain mentions it, and every work rule and constraint. Use get_project_state instead when you need the full structured JSON (ids, evidence, metrics, environment, role contracts), and always before update_project_state. This local server remembers, per project and only on this machine, the last version it gave you, so the next call shows what changed since then; pass since to compare against a specific version. FULL LEVEL: level \"full\" adds the addresses, ports, server paths and security rules that the public level withholds. It works only with the owner's key, only if the owner set CHAINMEMORY_ALLOW_FULL=1 in this server's configuration, and every request is logged by ChainMemory. Request it only when the user asked for it in this conversation, and never paste its text anywhere else.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -579,7 +585,8 @@ const TOOLS = [
                     budget: { type: "integer", minimum: 1000, maximum: 50000, description: "Maximum characters of the brief (default 7000). The most relevant sections are kept whole; the rest is shortened to fit." },
                     lang: { type: "string", enum: ["en", "es"], description: "Language of the section headings (default en). The items themselves are returned as they were written." },
                     since: { type: "integer", minimum: 1, description: "Version to compare against for the WHAT CHANGED section. Default: the last version this server gave you for this project, or the previous version if there is none." },
-                    task: { type: "string", pattern: "^pri_[0-9]{4,}$", description: "A priority id (e.g. 'pri_0015'). Returns the brief for working on that priority instead of the general one; since is ignored and nothing is remembered." }
+                    task: { type: "string", pattern: "^pri_[0-9]{4,}$", description: "A priority id (e.g. 'pri_0015'). Returns the brief for working on that priority instead of the general one; since is ignored and nothing is remembered." },
+                    level: { type: "string", enum: ["public", "full"], description: "public (default): safe to paste anywhere. full: includes infrastructure details; requires the owner's key and CHAINMEMORY_ALLOW_FULL=1, and is logged. Only when the user asked for it." }
                 },
                 required: ["name"]
             }
@@ -1164,8 +1171,25 @@ async function dispatchTool(request) {
             let since = null, recordada = false;
             if (args.since !== undefined && args.since !== null) since = pathInt(args.since, "since");
             else if (local) { since = leerVersionLeida(args.name); recordada = since !== null; }
+            // [brief-full-20261009] Nivel completo: solo en el MCP local y solo si el dueno lo
+            // habilito en la configuracion. El remoto atiende clientes de terceros: nunca.
+            const nivel = args.level === undefined || args.level === null ? "public" : args.level;
+            if (nivel !== "public" && nivel !== "full") {
+                throw new Error(`level must be "public" or "full" (received: ${JSON.stringify(args.level)})`);
+            }
+            if (nivel === "full") {
+                if (!local) throw new Error("the full level is not available on the remote endpoint: it serves third-party clients. Use the local MCP (npx chainmemory-mcp) with CHAINMEMORY_ALLOW_FULL=1. Nothing was requested.");
+                if (!ALLOW_FULL) throw new Error("the full level is disabled on this machine. The owner can enable it by adding CHAINMEMORY_ALLOW_FULL=1 to this MCP server's env and restarting. Nothing was requested.");
+            }
             const base = `/v1/project/${proyecto}/inject?budget=${boundedInt(args.budget, { def: 7000, min: 1000, max: 50000 })}` +
-                (args.lang ? `&lang=${args.lang}` : "");
+                (args.lang ? `&lang=${args.lang}` : "") + (nivel === "full" ? "&level=full" : "");
+            // Una API anterior ignora level y devuelve el publico: decirlo, no hacerlo pasar por el completo.
+            const conNivel = (d) => {
+                if (nivel !== "full") return d.text;
+                if (d.level !== "full") throw new Error("this API does not serve the full level yet");
+                const n = Array.isArray(d.sensitive_lines) ? d.sensitive_lines.length : 0;
+                return `${d.text}\n(full level: ${n} sensitive lines included; ChainMemory logged this request)`;
+            };
             // [brief-tarea-20261007] Modo tarea: lo necesario para trabajar en una prioridad.
             // No compara versiones ni mueve la version recordada: no es una lectura del
             // estado completo, y la proxima vista general tiene que seguir mostrando que cambio.
@@ -1176,7 +1200,7 @@ async function dispatchTool(request) {
                 const t = await apiGet(`${base}&task=${args.task}`);
                 // una API anterior ignora task y devuelve la vista general: no hacerla pasar por la de la tarea
                 if (t.task !== args.task) throw new Error("this API does not serve task briefs yet; use get_project_state");
-                return ok(t.text);
+                return ok(conNivel(t));
             }
             let data;
             try {
@@ -1189,8 +1213,9 @@ async function dispatchTool(request) {
                     throw new Error("this API does not serve project briefs yet; use get_project_state");
                 } else throw e;
             }
+            const texto = conNivel(data);
             if (local && Number.isInteger(data.version)) guardarVersionLeida(args.name, data.version);
-            return ok(data.text);
+            return ok(texto);
         }
         if (name === "update_project_state") {
             if (!Array.isArray(args.ops) || args.ops.length === 0) {
