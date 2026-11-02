@@ -224,7 +224,7 @@ Three defects that made tools report confidently wrong things. No new tools.
 
 - **Project Brain** — `get_project_state` consolidates your atomic memories into a structured, versioned, verifiable project state (decisions, risks, constraints, metrics, and environment: where and how you work), and delivers active role contracts with it in a single call
 - **Verifiable Role Contracts (VRC)** — human-signed role contracts for AI agents: `get_role_contract` (read the contract), `assume_role` (open an audited Role Session), `release_role` (close with a summary)
-- **36 tools total** — memory ops, semantic search, verification proofs, projects, Project Brain, role contracts with audited sessions, selective inject
+- **37 tools total** — memory ops, semantic search, verification proofs, projects, Project Brain, role contracts with audited sessions, selective inject
 
 ## Quick start
 
